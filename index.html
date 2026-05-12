@@ -3,289 +3,301 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>APIMart 图片生成 Playground</title>
+  <title>APIMart Image Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand-block">
-        <p class="eyebrow">APIMart GPT-Image-2</p>
-        <div class="brand-row">
-          <h1>尼库Ai生图中转站</h1>
-        </div>
-      </div>
 
-      <div class="topbar-actions">
-        <button id="openSettingsBtn" type="button" class="ghost settings-trigger" aria-label="打开设置">
-          <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M10.4 2.2h3.2l.6 2.4c.5.2 1 .4 1.5.8l2.3-.9 2.2 2.2-.9 2.3c.3.5.6 1 .8 1.5l2.4.6v3.2l-2.4.6c-.2.5-.4 1-.8 1.5l.9 2.3-2.2 2.2-2.3-.9c-.5.3-1 .6-1.5.8l-.6 2.4h-3.2l-.6-2.4c-.5-.2-1-.4-1.5-.8l-2.3.9-2.2-2.2.9-2.3c-.3-.5-.6-1-.8-1.5l-2.4-.6v-3.2l2.4-.6c.2-.5.4-1 .8-1.5l-.9-2.3 2.2-2.2 2.3.9c.5-.3 1-.6 1.5-.8z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"></path>
-            <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
-          </svg>
-        </button>
-      </div>
-    </header>
+<div class="page">
 
-    <div class="panel result-intro-banner">
-      <p>生成结果会显示在这里。</p>
+  <!-- ====== HEADER ====== -->
+  <header class="header">
+    <div class="header__brand">
+      <span class="header__tag">GPT-Image-2</span>
+      <h1 class="header__title">尼库Ai<em>生图中转站</em></h1>
     </div>
+    <nav class="header__nav">
+      <div class="header__status">
+        <span class="header__status-dot"></span>
+        <span id="statusText">准备就绪</span>
+      </div>
+      <button id="openSettingsBtn" type="button" class="btn--icon" aria-label="设置">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+    </nav>
+  </header>
 
-    <main class="workspace">
-      <aside class="preview-pane">
-        <div class="panel stats-panel">
-          <div class="stats-grid">
-            <div class="metric">
-              <span class="metric-label">当前模式</span>
-              <strong id="modeBadge">文生图</strong>
-            </div>
-            <div class="metric">
-              <span class="metric-label">任务状态</span>
-              <strong id="statusBadge">空闲</strong>
-            </div>
-            <div class="metric">
-              <span class="metric-label">最近任务</span>
-              <strong id="taskBadge">暂无</strong>
-            </div>
-          </div>
+  <!-- hidden banner kept for app.js compatibility -->
+  <div class="result-intro-banner" style="display:none"><p></p></div>
+
+  <!-- ====== MAIN TWO-COLUMN ====== -->
+  <main class="main">
+
+    <!-- LEFT: COMPOSER -->
+    <section class="col col--composer">
+      <div class="card card--primary">
+
+        <div class="card__head">
+          <h2>控制台</h2>
+          <span class="pill">Prompt</span>
         </div>
 
-        <div class="panel result-panel">
-          <div class="section-heading">
-            <h2>结果预览</h2>
-            <p>任务状态、图片结果和原始响应集中显示在这里。</p>
-          </div>
+        <form id="imageForm" class="form">
 
-          <details id="requestDetails" class="status-box collapsible-box">
-            <summary class="collapsible-summary">
-              <span>请求详情</span>
-              <span id="statusText">准备就绪。</span>
-              <span class="collapse-indicator" aria-hidden="true">▾</span>
+          <!-- parameter grid -->
+          <fieldset class="params">
+            <legend class="sr-only">参数</legend>
+            <label class="ctrl">
+              <span class="ctrl__label">模式</span>
+              <select id="mode" name="mode">
+                <option value="text">文生图</option>
+                <option value="image">图生图</option>
+                <option value="multi">多图融合</option>
+              </select>
+            </label>
+            <label class="ctrl">
+              <span class="ctrl__label">比例</span>
+              <select id="aspectRatio" name="aspectRatio">
+                <option value="auto">自动</option>
+                <option value="1:1">1 : 1</option>
+                <option value="3:2">3 : 2</option>
+                <option value="2:3">2 : 3</option>
+                <option value="16:9">16 : 9</option>
+                <option value="9:16">9 : 16</option>
+                <option value="4:3">4 : 3</option>
+                <option value="3:4">3 : 4</option>
+                <option value="5:4">5 : 4</option>
+                <option value="4:5">4 : 5</option>
+                <option value="2:1">2 : 1</option>
+                <option value="1:2">1 : 2</option>
+                <option value="21:9">21 : 9</option>
+                <option value="9:21">9 : 21</option>
+              </select>
+            </label>
+            <label class="ctrl">
+              <span class="ctrl__label">分辨率</span>
+              <select id="resolution" name="resolution">
+                <option value="1k">1K</option>
+                <option value="2k">2K</option>
+                <option value="4k">4K</option>
+              </select>
+            </label>
+            <label class="ctrl">
+              <span class="ctrl__label">格式</span>
+              <select id="outputFormat" name="outputFormat">
+                <option value="">默认</option>
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG</option>
+                <option value="webp">WebP</option>
+              </select>
+            </label>
+            <label class="ctrl">
+              <span class="ctrl__label">数量</span>
+              <input id="imageCount" name="imageCount" type="number" min="1" max="4" value="1">
+            </label>
+            <label class="ctrl">
+              <span class="ctrl__label">背景</span>
+              <select id="background" name="background">
+                <option value="">默认</option>
+                <option value="transparent">透明</option>
+                <option value="opaque">不透明</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <!-- prompt textarea -->
+          <label class="ctrl ctrl--full">
+            <span class="ctrl__label">提示词</span>
+            <textarea id="prompt" name="prompt" rows="7" placeholder="描述你想要的画面..." required></textarea>
+          </label>
+
+          <!-- negative prompt -->
+          <details class="negative-panel fold">
+            <summary class="fold__head">
+              <span class="fold__title">反向提示词</span>
+              <span class="fold__hint negative-summary-text">通用 / 人物 / 二次元模板 + 自定义</span>
+              <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </summary>
-            <code id="requestPreview">尚未提交请求</code>
+            <div class="fold__body negative-panel-body">
+              <div class="chips" id="negativeTemplateTabs">
+                <button type="button" class="chip template-chip active" data-template="general">通用</button>
+                <button type="button" class="chip template-chip" data-template="portrait">人物</button>
+                <button type="button" class="chip template-chip" data-template="anime">二次元</button>
+                <button type="button" class="chip template-chip" data-template="custom">自定义</button>
+              </div>
+              <label class="ctrl ctrl--full">
+                <span class="ctrl__label">反向提示词内容</span>
+                <textarea id="negativePrompt" name="negativePrompt" rows="5" placeholder="不希望出现的内容..."></textarea>
+              </label>
+              <button id="clearNegativeBtn" type="button" class="btn btn--ghost btn--sm">清空</button>
+            </div>
           </details>
 
-          <div class="result-meta">
-            <div>
-              <span class="meta-label">任务 ID</span>
-              <strong id="taskIdValue">-</strong>
-            </div>
-            <div>
-              <span class="meta-label">接口状态</span>
-              <strong id="taskStateValue">-</strong>
-            </div>
+          <!-- reference images -->
+          <section id="referenceSection" class="reference-panel fold--static">
+            <h3 class="fold__title">参考图片</h3>
+            <p class="fold__hint">支持公网 URL 和 base64 data URI</p>
+            <div id="referenceList" class="reference-list"></div>
+            <button id="addReferenceBtn" type="button" class="btn btn--outline btn--sm">+ 添加参考图</button>
+          </section>
+
+          <!-- actions -->
+          <div class="form__foot">
+            <button type="submit" class="btn btn--accent">开始生成</button>
+            <button id="resetBtn" type="button" class="btn btn--ghost">重置</button>
           </div>
 
-          <div id="resultGallery" class="gallery empty">
-            <p></p>
-          </div>
+        </form>
+      </div>
+    </section>
 
-          <div id="rawResult" class="raw-result" hidden>
-            <div class="section-heading compact">
-              <h3>原始响应</h3>
-            </div>
-            <pre id="rawResultContent"></pre>
-          </div>
+    <!-- RIGHT: RESULTS -->
+    <section class="col col--output">
+
+      <!-- live indicators -->
+      <div class="card card--compact indicators">
+        <div class="indicator">
+          <span class="indicator__label">模式</span>
+          <strong id="modeBadge">文生图</strong>
         </div>
-
-        <div class="panel history-panel">
-          <div class="section-heading">
-            <h2>生成历史</h2>
-          </div>
-
-          <div class="inline-actions history-actions history-actions-inline">
-            <button id="refreshHistoryBtn" type="button" class="ghost">刷新当前历史</button>
-            <button id="clearHistoryBtn" type="button" class="ghost">清空历史</button>
-          </div>
-
-          <div id="historyList" class="history-list empty">
-            <p>暂无历史记录。</p>
-          </div>
+        <div class="indicator">
+          <span class="indicator__label">状态</span>
+          <strong id="statusBadge">空闲</strong>
         </div>
-      </aside>
-
-      <section class="composer">
-        <div class="panel panel-hero">
-          <div class="section-heading">
-            <h2>提示词</h2>
-          </div>
-
-          <form id="imageForm" class="playground-form">
-            <div class="grid controls-grid">
-              <label class="field">
-                <span>生成模式</span>
-                <select id="mode" name="mode">
-                  <option value="text">文生图</option>
-                  <option value="image">图生图</option>
-                  <option value="multi">多图融合</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>输出格式</span>
-                <select id="outputFormat" name="outputFormat">
-                  <option value="">默认</option>
-                  <option value="png">png</option>
-                  <option value="jpeg">jpeg</option>
-                  <option value="webp">webp</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>图片数量</span>
-                <input id="imageCount" name="imageCount" type="number" min="1" max="4" value="1">
-              </label>
-              <label class="field">
-                <span>画面比例</span>
-                <select id="aspectRatio" name="aspectRatio">
-                  <option value="auto">自动</option>
-                  <option value="1:1">1:1</option>
-                  <option value="3:2">3:2</option>
-                  <option value="2:3">2:3</option>
-                  <option value="16:9">16:9</option>
-                  <option value="9:16">9:16</option>
-                  <option value="4:3">4:3</option>
-                  <option value="3:4">3:4</option>
-                  <option value="5:4">5:4</option>
-                  <option value="4:5">4:5</option>
-                  <option value="2:1">2:1</option>
-                  <option value="1:2">1:2</option>
-                  <option value="21:9">21:9</option>
-                  <option value="9:21">9:21</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>分辨率档位</span>
-                <select id="resolution" name="resolution">
-                  <option value="1k">1k</option>
-                  <option value="2k">2k</option>
-                  <option value="4k">4k</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>背景模式</span>
-                <select id="background" name="background">
-                  <option value="">默认</option>
-                  <option value="transparent">透明</option>
-                  <option value="opaque">不透明</option>
-                </select>
-              </label>
-            </div>
-
-            <label class="field prompt-field">
-              <span>提示词</span>
-              <textarea id="prompt" name="prompt" rows="10" placeholder="请输入你想生成的图片描述..." required></textarea>
-            </label>
-
-            <details class="negative-panel collapsible-negative">
-              <summary class="negative-summary">
-                <span>反向提示词</span>
-                <span class="negative-summary-text">支持通用、人物、二次元 / 插画模板，也支持自定义。</span>
-                <span class="collapse-indicator" aria-hidden="true">▾</span>
-              </summary>
-
-              <div class="negative-panel-body">
-                <div class="template-tabs" id="negativeTemplateTabs">
-                  <button type="button" class="template-chip active" data-template="general">通用</button>
-                  <button type="button" class="template-chip" data-template="portrait">人物</button>
-                  <button type="button" class="template-chip" data-template="anime">二次元 / 插画</button>
-                  <button type="button" class="template-chip" data-template="custom">自定义</button>
-                </div>
-
-                <label class="field">
-                  <span>反向提示词内容</span>
-                  <textarea id="negativePrompt" name="negativePrompt" rows="8" placeholder="可选：填写你希望避免出现的内容"></textarea>
-                </label>
-
-                <div class="inline-actions template-actions template-actions-bottom">
-                  <button id="clearNegativeBtn" type="button" class="ghost">清空反向提示词</button>
-                </div>
-              </div>
-            </details>
-
-            <section id="referenceSection" class="reference-panel">
-              <div class="section-heading compact">
-                <h3>参考图片</h3>
-                <p>支持公网图片 URL 和 base64 data URI。图生图与多图融合模式下使用。</p>
-              </div>
-              <div id="referenceList" class="reference-list"></div>
-              <div class="inline-actions">
-                <button id="addReferenceBtn" type="button" class="secondary">添加参考图</button>
-              </div>
-            </section>
-
-            <div class="form-actions sticky-actions">
-              <button type="submit" class="primary">开始生成</button>
-              <button id="resetBtn" type="button" class="ghost">重置表单</button>
-            </div>
-          </form>
+        <div class="indicator">
+          <span class="indicator__label">任务</span>
+          <strong id="taskBadge" class="mono">暂无</strong>
         </div>
-      </section>
-    </main>
-  </div>
-
-  <div id="settingsModal" class="modal-backdrop" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-      <div class="modal-header">
-        <div>
-          <h2 id="settingsTitle">小设置</h2>
-          <p>在这里填写 API Key 和任务相关参数。</p>
-        </div>
-        <button id="closeSettingsBtn" type="button" class="ghost modal-close">关闭</button>
       </div>
 
-      <div class="settings-grid">
-        <label class="field">
-          <span>固定 API 地址</span>
-          <input id="fixedBaseUrl" type="text" value="https://api.apimart.ai" readonly>
-        </label>
-        <label class="field">
-          <span>API Key</span>
-          <input id="apiKey" name="apiKey" type="password" placeholder="sk-..." required>
-        </label>
-        <label class="field">
-          <span>任务语言</span>
-          <select id="taskLanguage" name="taskLanguage">
-            <option value="zh">中文</option>
-            <option value="en">英文</option>
-            <option value="ko">韩文</option>
-            <option value="ja">日文</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>官方回退</span>
-          <select id="officialFallback" name="officialFallback">
-            <option value="false">关闭</option>
-            <option value="true">开启</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>轮询间隔（毫秒）</span>
-          <input id="pollInterval" name="pollInterval" type="number" min="1000" step="500" value="3000">
-        </label>
-        <label class="field">
-          <span>首次轮询延迟（毫秒）</span>
-          <input id="initialPollDelay" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
-        </label>
-        <label class="field">
-          <span>轮询超时（毫秒）</span>
-          <input id="pollTimeout" name="pollTimeout" type="number" min="5000" step="1000" value="120000">
-        </label>
+      <!-- result panel -->
+      <div class="card result-panel">
+
+        <div class="card__head">
+          <h2>输出</h2>
+        </div>
+
+        <!-- gallery -->
+        <div id="resultGallery" class="gallery empty">
+          <div class="gallery__placeholder">
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><rect x="8" y="12" width="40" height="32" rx="5" stroke="currentColor" stroke-width="1.6" opacity=".18"/><circle cx="20" cy="24" r="4" stroke="currentColor" stroke-width="1.6" opacity=".18"/><polyline points="8,40 18,30 28,36 38,24 48,34" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".18"/></svg>
+            <span>等待生成结果</span>
+          </div>
+        </div>
+
+        <!-- request details (collapsible) -->
+        <details id="requestDetails" class="status-box fold fold--sub">
+          <summary class="fold__head collapsible-summary">
+            <span class="fold__title">请求详情</span>
+            <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </summary>
+          <code id="requestPreview" class="fold__code">尚未提交请求</code>
+        </details>
+
+        <!-- meta row -->
+        <div class="result-meta">
+          <div class="meta-cell">
+            <span class="meta-label">任务 ID</span>
+            <strong id="taskIdValue" class="mono">-</strong>
+          </div>
+          <div class="meta-cell">
+            <span class="meta-label">接口状态</span>
+            <strong id="taskStateValue">-</strong>
+          </div>
+        </div>
+
+        <!-- raw JSON -->
+        <div id="rawResult" class="raw-result" hidden>
+          <h3 class="raw-result__title">原始响应</h3>
+          <pre id="rawResultContent"></pre>
+        </div>
       </div>
 
-      <div class="form-actions modal-actions">
-        <button id="saveSettingsBtn" type="button" class="primary">保存并关闭</button>
+      <!-- history -->
+      <div class="card history-panel">
+        <div class="card__head">
+          <h2>历史</h2>
+          <div class="card__head-actions">
+            <button id="refreshHistoryBtn" type="button" class="btn btn--ghost btn--sm">刷新</button>
+            <button id="clearHistoryBtn" type="button" class="btn btn--ghost btn--sm">清空</button>
+          </div>
+        </div>
+        <div id="historyList" class="history-list empty">
+          <p>暂无历史记录。</p>
+        </div>
       </div>
+
+    </section>
+  </main>
+</div>
+
+<!-- ====== SETTINGS MODAL ====== -->
+<div id="settingsModal" class="modal-backdrop" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal__head">
+      <div>
+        <h2 id="settingsTitle">设置</h2>
+        <p class="modal__desc">API 密钥与轮询参数</p>
+      </div>
+      <button id="closeSettingsBtn" type="button" class="btn--icon" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="modal__body settings-grid">
+      <label class="ctrl">
+        <span class="ctrl__label">API 地址</span>
+        <input id="fixedBaseUrl" type="text" value="https://api.apimart.ai" readonly>
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">API Key</span>
+        <input id="apiKey" name="apiKey" type="password" placeholder="sk-..." required>
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">任务语言</span>
+        <select id="taskLanguage" name="taskLanguage">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+          <option value="ko">한국어</option>
+          <option value="ja">日本語</option>
+        </select>
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">官方回退</span>
+        <select id="officialFallback" name="officialFallback">
+          <option value="false">关闭</option>
+          <option value="true">开启</option>
+        </select>
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">轮询间隔 (ms)</span>
+        <input id="pollInterval" name="pollInterval" type="number" min="1000" step="500" value="3000">
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">首次延迟 (ms)</span>
+        <input id="initialPollDelay" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
+      </label>
+      <label class="ctrl">
+        <span class="ctrl__label">超时 (ms)</span>
+        <input id="pollTimeout" name="pollTimeout" type="number" min="5000" step="1000" value="120000">
+      </label>
+    </div>
+    <div class="modal__foot">
+      <button id="saveSettingsBtn" type="button" class="btn btn--accent">保存并关闭</button>
     </div>
   </div>
+</div>
 
-  <template id="referenceTemplate">
-    <div class="reference-item">
-      <textarea class="reference-input" rows="3" placeholder="请输入图片 URL，或粘贴 data:image/png;base64,..."></textarea>
-      <button type="button" class="danger remove-reference">删除</button>
-    </div>
-  </template>
+<!-- ====== TEMPLATE ====== -->
+<template id="referenceTemplate">
+  <div class="reference-item">
+    <textarea class="reference-input" rows="2" placeholder="图片 URL 或 base64 data URI"></textarea>
+    <button type="button" class="btn btn--danger btn--sm remove-reference">删除</button>
+  </div>
+</template>
 
-  <script src="./app.js"></script>
+<script src="./app.js"></script>
 </body>
 </html>

@@ -40,7 +40,7 @@ APIMart Image Bridge 是一个面向 APIMart `gpt-image-2` 接口的轻量级中
 在服务器上执行：
 
 ```bash
-git clone <your-repo-url> apimart-image-bridge
+git clone https://github.com/lichi7887/apimart-image-Transit.git apimart-image-bridge
 cd apimart-image-bridge
 ```
 

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APIMart 图片生成 Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="eyebrow">APIMart GPT-Image-2</p>
+        <div class="brand-row">
+          <h1>尼库Ai生图中转站</h1>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="openSettingsBtn" type="button" class="ghost settings-trigger" aria-label="打开设置">
+          <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.4 2.2h3.2l.6 2.4c.5.2 1 .4 1.5.8l2.3-.9 2.2 2.2-.9 2.3c.3.5.6 1 .8 1.5l2.4.6v3.2l-2.4.6c-.2.5-.4 1-.8 1.5l.9 2.3-2.2 2.2-2.3-.9c-.5.3-1 .6-1.5.8l-.6 2.4h-3.2l-.6-2.4c-.5-.2-1-.4-1.5-.8l-2.3.9-2.2-2.2.9-2.3c-.3-.5-.6-1-.8-1.5l-2.4-.6v-3.2l2.4-.6c.2-.5.4-1 .8-1.5l-.9-2.3 2.2-2.2 2.3.9c.5-.3 1-.6 1.5-.8z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"></path>
+            <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="panel result-intro-banner">
+      <p>生成结果会显示在这里。</p>
+    </div>
+
+    <main class="workspace">
+      <aside class="preview-pane">
+        <div class="panel stats-panel">
+          <div class="stats-grid">
+            <div class="metric">
+              <span class="metric-label">当前模式</span>
+              <strong id="modeBadge">文生图</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">任务状态</span>
+              <strong id="statusBadge">空闲</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">最近任务</span>
+              <strong id="taskBadge">暂无</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel result-panel">
+          <div class="section-heading">
+            <h2>结果预览</h2>
+            <p>任务状态、图片结果和原始响应集中显示在这里。</p>
+          </div>
+
+          <details id="requestDetails" class="status-box collapsible-box">
+            <summary class="collapsible-summary">
+              <span>请求详情</span>
+              <span id="statusText">准备就绪。</span>
+              <span class="collapse-indicator" aria-hidden="true">▾</span>
+            </summary>
+            <code id="requestPreview">尚未提交请求</code>
+          </details>
+
+          <div class="result-meta">
+            <div>
+              <span class="meta-label">任务 ID</span>
+              <strong id="taskIdValue">-</strong>
+            </div>
+            <div>
+              <span class="meta-label">接口状态</span>
+              <strong id="taskStateValue">-</strong>
+            </div>
+          </div>
+
+          <div id="resultGallery" class="gallery empty">
+            <p></p>
+          </div>
+
+          <div id="rawResult" class="raw-result" hidden>
+            <div class="section-heading compact">
+              <h3>原始响应</h3>
+            </div>
+            <pre id="rawResultContent"></pre>
+          </div>
+        </div>
+
+        <div class="panel history-panel">
+          <div class="section-heading">
+            <h2>生成历史</h2>
+          </div>
+
+          <div class="inline-actions history-actions history-actions-inline">
+            <button id="refreshHistoryBtn" type="button" class="ghost">刷新当前历史</button>
+            <button id="clearHistoryBtn" type="button" class="ghost">清空历史</button>
+          </div>
+
+          <div id="historyList" class="history-list empty">
+            <p>暂无历史记录。</p>
+          </div>
+        </div>
+      </aside>
+
+      <section class="composer">
+        <div class="panel panel-hero">
+          <div class="section-heading">
+            <h2>提示词</h2>
+          </div>
+
+          <form id="imageForm" class="playground-form">
+            <div class="grid controls-grid">
+              <label class="field">
+                <span>生成模式</span>
+                <select id="mode" name="mode">
+                  <option value="text">文生图</option>
+                  <option value="image">图生图</option>
+                  <option value="multi">多图融合</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>输出格式</span>
+                <select id="outputFormat" name="outputFormat">
+                  <option value="">默认</option>
+                  <option value="png">png</option>
+                  <option value="jpeg">jpeg</option>
+                  <option value="webp">webp</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>图片数量</span>
+                <input id="imageCount" name="imageCount" type="number" min="1" max="4" value="1">
+              </label>
+              <label class="field">
+                <span>画面比例</span>
+                <select id="aspectRatio" name="aspectRatio">
+                  <option value="auto">自动</option>
+                  <option value="1:1">1:1</option>
+                  <option value="3:2">3:2</option>
+                  <option value="2:3">2:3</option>
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="4:3">4:3</option>
+                  <option value="3:4">3:4</option>
+                  <option value="5:4">5:4</option>
+                  <option value="4:5">4:5</option>
+                  <option value="2:1">2:1</option>
+                  <option value="1:2">1:2</option>
+                  <option value="21:9">21:9</option>
+                  <option value="9:21">9:21</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>分辨率档位</span>
+                <select id="resolution" name="resolution">
+                  <option value="1k">1k</option>
+                  <option value="2k">2k</option>
+                  <option value="4k">4k</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>背景模式</span>
+                <select id="background" name="background">
+                  <option value="">默认</option>
+                  <option value="transparent">透明</option>
+                  <option value="opaque">不透明</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt" name="prompt" rows="10" placeholder="请输入你想生成的图片描述..." required></textarea>
+            </label>
+
+            <details class="negative-panel collapsible-negative">
+              <summary class="negative-summary">
+                <span>反向提示词</span>
+                <span class="negative-summary-text">支持通用、人物、二次元 / 插画模板，也支持自定义。</span>
+                <span class="collapse-indicator" aria-hidden="true">▾</span>
+              </summary>
+
+              <div class="negative-panel-body">
+                <div class="template-tabs" id="negativeTemplateTabs">
+                  <button type="button" class="template-chip active" data-template="general">通用</button>
+                  <button type="button" class="template-chip" data-template="portrait">人物</button>
+                  <button type="button" class="template-chip" data-template="anime">二次元 / 插画</button>
+                  <button type="button" class="template-chip" data-template="custom">自定义</button>
+                </div>
+
+                <label class="field">
+                  <span>反向提示词内容</span>
+                  <textarea id="negativePrompt" name="negativePrompt" rows="8" placeholder="可选：填写你希望避免出现的内容"></textarea>
+                </label>
+
+                <div class="inline-actions template-actions template-actions-bottom">
+                  <button id="clearNegativeBtn" type="button" class="ghost">清空反向提示词</button>
+                </div>
+              </div>
+            </details>
+
+            <section id="referenceSection" class="reference-panel">
+              <div class="section-heading compact">
+                <h3>参考图片</h3>
+                <p>支持公网图片 URL 和 base64 data URI。图生图与多图融合模式下使用。</p>
+              </div>
+              <div id="referenceList" class="reference-list"></div>
+              <div class="inline-actions">
+                <button id="addReferenceBtn" type="button" class="secondary">添加参考图</button>
+              </div>
+            </section>
+
+            <div class="form-actions sticky-actions">
+              <button type="submit" class="primary">开始生成</button>
+              <button id="resetBtn" type="button" class="ghost">重置表单</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="settingsModal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="settingsTitle">小设置</h2>
+          <p>在这里填写 API Key 和任务相关参数。</p>
+        </div>
+        <button id="closeSettingsBtn" type="button" class="ghost modal-close">关闭</button>
+      </div>
+
+      <div class="settings-grid">
+        <label class="field">
+          <span>固定 API 地址</span>
+          <input id="fixedBaseUrl" type="text" value="https://api.apimart.ai" readonly>
+        </label>
+        <label class="field">
+          <span>API Key</span>
+          <input id="apiKey" name="apiKey" type="password" placeholder="sk-..." required>
+        </label>
+        <label class="field">
+          <span>任务语言</span>
+          <select id="taskLanguage" name="taskLanguage">
+            <option value="zh">中文</option>
+            <option value="en">英文</option>
+            <option value="ko">韩文</option>
+            <option value="ja">日文</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>官方回退</span>
+          <select id="officialFallback" name="officialFallback">
+            <option value="false">关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>轮询间隔（毫秒）</span>
+          <input id="pollInterval" name="pollInterval" type="number" min="1000" step="500" value="3000">
+        </label>
+        <label class="field">
+          <span>首次轮询延迟（毫秒）</span>
+          <input id="initialPollDelay" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
+        </label>
+        <label class="field">
+          <span>轮询超时（毫秒）</span>
+          <input id="pollTimeout" name="pollTimeout" type="number" min="5000" step="1000" value="120000">
+        </label>
+      </div>
+
+      <div class="form-actions modal-actions">
+        <button id="saveSettingsBtn" type="button" class="primary">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <template id="referenceTemplate">
+    <div class="reference-item">
+      <textarea class="reference-input" rows="3" placeholder="请输入图片 URL，或粘贴 data:image/png;base64,..."></textarea>
+      <button type="button" class="danger remove-reference">删除</button>
+    </div>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>

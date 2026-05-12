@@ -1,0 +1,9 @@
+{
+  "name": "apimart-image-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-proxied APIMart GPT-Image-2 playground",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

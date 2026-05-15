@@ -362,8 +362,8 @@ function renderHistory() {
         ? item.previewImages
         : (item.previewImage ? [item.previewImage] : []);
 
-      const previewMarkup = previewImages[0]
-        ? `<div class="history-thumb" style="cursor:zoom-in"><img src="${escapeHtml(previewImages[0])}" alt="历史缩略图" data-lightbox="${escapeHtml(previewImages[0])}"></div>`
+      const previewMarkup = previewImages.length
+        ? `<div class="history-thumbs">${previewImages.map((url) => `<div class="history-thumbs__item"><img src="${escapeHtml(url)}" alt="历史缩略图" data-lightbox="${escapeHtml(url)}"></div>`).join("")}</div>`
         : `<div class="history-thumb"><div class="history-placeholder">等待生成结果</div></div>`;
 
       const downloadButtons = previewImages.length

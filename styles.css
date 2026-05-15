@@ -638,6 +638,20 @@ pre {
   place-items: center;
 }
 .history-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.history-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+}
+.history-thumbs__item {
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
+.history-thumbs__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .history-placeholder { color: var(--text-3); font-size: 11px; }
 .history-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .history-task { font-family: var(--font-mono); font-size: 10px; color: var(--red); word-break: break-all; opacity: .8; }

@@ -2,7 +2,7 @@
 
 ## 概述
 
-APIMart Image Bridge 是一个面向 APIMart `gpt-image-2` 接口的轻量级中转服务。项目提供浏览器端页面用于提交图像生成请求，并通过 Node.js 服务端代理调用上游接口，从而避免浏览器直接访问 APIMart 接口。
+APIMart Image Bridge 是一个面向 APIMart `gpt-image-2` 接口的轻量级服务。项目提供浏览器端页面用于提交图像生成请求，并通过 Node.js 服务端代理调用上游接口，从而避免浏览器直接访问 APIMart 接口。
 
 本项目推荐采用以下部署路径：
 

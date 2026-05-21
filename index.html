@@ -153,42 +153,15 @@
         </div>
       </div>
 
-      <div class="card result-panel">
-        <div class="card__head">
-          <h2>输出</h2>
-        </div>
+      <details id="requestDetails" class="status-box fold fold--sub" hidden>
+        <summary class="fold__head collapsible-summary">
+          <span class="fold__title">请求详情</span>
+          <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </summary>
+        <code id="requestPreview" class="fold__code">尚未提交请求</code>
+      </details>
 
-        <div id="resultGallery" class="gallery empty">
-          <div class="gallery__placeholder">
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><rect x="8" y="12" width="40" height="32" rx="5" stroke="currentColor" stroke-width="1.6" opacity=".18"/><circle cx="20" cy="24" r="4" stroke="currentColor" stroke-width="1.6" opacity=".18"/><polyline points="8,40 18,30 28,36 38,24 48,34" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".18"/></svg>
-            <span>等待生成结果</span>
-          </div>
-        </div>
-
-        <details id="requestDetails" class="status-box fold fold--sub">
-          <summary class="fold__head collapsible-summary">
-            <span class="fold__title">请求详情</span>
-            <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </summary>
-          <code id="requestPreview" class="fold__code">尚未提交请求</code>
-        </details>
-
-        <div class="result-meta">
-          <div class="meta-cell">
-            <span class="meta-label">任务 ID</span>
-            <strong id="taskIdValue" class="mono">-</strong>
-          </div>
-          <div class="meta-cell">
-            <span class="meta-label">接口状态</span>
-            <strong id="taskStateValue">-</strong>
-          </div>
-        </div>
-
-        <div id="rawResult" class="raw-result" hidden>
-          <h3 class="raw-result__title">原始响应</h3>
-          <pre id="rawResultContent"></pre>
-        </div>
-      </div>
+      <div id="rawResult" class="raw-result" hidden></div>
 
       <div class="card history-panel">
         <div class="card__head">

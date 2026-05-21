@@ -2,6 +2,156 @@ const STORAGE_KEY = "apimart-image-bridge";
 const HISTORY_KEY = "apimart-image-bridge-history";
 const FIXED_BASE_URL = "https://api.apimart.ai";
 const MAX_HISTORY_ITEMS = 20;
+const IDB_NAME = "apimart-image-store";
+const IDB_STORE = "images";
+const IDB_VERSION = 1;
+
+let idb = null;
+const blobUrlCache = new Map();
+
+function proxyImageUrl(url) {
+  return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+}
+
+function getImageSrc(remoteUrl) {
+  if (blobUrlCache.has(remoteUrl)) return blobUrlCache.get(remoteUrl);
+  return proxyImageUrl(remoteUrl);
+}
+
+function openIDB() {
+  if (idb) return Promise.resolve(idb);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => { idb = req.result; resolve(idb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(key, value) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(key) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function cacheRemoteImage(url) {
+  if (blobUrlCache.has(url)) return;
+  try {
+    const existing = await idbGet(url);
+    if (existing) {
+      const blobUrl = URL.createObjectURL(existing);
+      blobUrlCache.set(url, blobUrl);
+      return;
+    }
+    const response = await fetch(proxyImageUrl(url));
+    const blob = await response.blob();
+    await idbPut(url, blob);
+    const blobUrl = URL.createObjectURL(blob);
+    blobUrlCache.set(url, blobUrl);
+  } catch {}
+}
+
+async function getLocalImageUrl(url) {
+  if (blobUrlCache.has(url)) return blobUrlCache.get(url);
+  try {
+    const blob = await idbGet(url);
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      blobUrlCache.set(url, blobUrl);
+      return blobUrl;
+    }
+  } catch {}
+  return proxyImageUrl(url);
+}
+
+async function pruneOrphanedImages() {
+  const keptUrls = new Set();
+  for (const item of generationHistory) {
+    if (item.previewImage) keptUrls.add(item.previewImage);
+    if (Array.isArray(item.previewImages)) item.previewImages.forEach((u) => keptUrls.add(u));
+  }
+  const db = await openIDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const key of req.result) {
+        if (!keptUrls.has(key)) store.delete(key);
+      }
+      resolve();
+    };
+    req.onerror = () => resolve();
+  });
+}
+
+async function upgradeToLocalImages() {
+  const imgs = elements.historyList.querySelectorAll("img[data-remote-src]");
+  for (const img of imgs) {
+    const remoteUrl = img.dataset.remoteSrc;
+    if (!remoteUrl || blobUrlCache.has(remoteUrl)) continue;
+    const localUrl = await getLocalImageUrl(remoteUrl);
+    if (img.src !== localUrl) {
+      img.src = localUrl;
+      img.dataset.lightbox = localUrl;
+    }
+  }
+}
+
+async function cacheAllHistoryImages() {
+  const urls = [];
+  for (const item of generationHistory) {
+    const imgs = Array.isArray(item.previewImages) && item.previewImages.length
+      ? item.previewImages
+      : (item.previewImage ? [item.previewImage] : []);
+    urls.push(...imgs);
+  }
+  await Promise.all(urls.map((url) => cacheRemoteImage(url)));
+}
+
+async function loadBlobCache() {
+  try {
+    const db = await openIDB();
+    const keys = await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    for (const key of keys) {
+      if (blobUrlCache.has(key)) continue;
+      const blob = await idbGet(key);
+      if (blob) blobUrlCache.set(key, URL.createObjectURL(blob));
+    }
+  } catch {}
+}
 
 const NEGATIVE_TEMPLATES = {
   general:
@@ -55,9 +205,6 @@ const elements = {
   statusText: document.getElementById("statusText"),
   requestPreview: document.getElementById("requestPreview"),
   requestDetails: document.getElementById("requestDetails"),
-  taskIdValue: document.getElementById("taskIdValue"),
-  taskStateValue: document.getElementById("taskStateValue"),
-  resultGallery: document.getElementById("resultGallery"),
   rawResult: document.getElementById("rawResult"),
   rawResultContent: document.getElementById("rawResultContent"),
   modeBadge: document.getElementById("modeBadge"),
@@ -71,7 +218,7 @@ const elements = {
   lightboxCloseBtn: document.getElementById("lightboxCloseBtn"),
 };
 
-let activePoll = null;
+let activeTasks = new Map();
 let selectedNegativeTemplate = DEFAULTS.selectedNegativeTemplate;
 let generationHistory = [];
 let attachmentItems = [];
@@ -84,29 +231,16 @@ function init() {
   generationHistory = getHistoryState();
   selectedNegativeTemplate = savedState.selectedNegativeTemplate || DEFAULTS.selectedNegativeTemplate;
   hydrateForm(savedState);
-  enhanceResultPanel();
   syncModeBadge();
   syncTemplateUI();
-  renderHistory();
+  loadBlobCache().then(() => {
+    renderHistory();
+  });
   renderAttachmentTray();
   syncSubmitAvailability();
   attachEvents();
-}
-
-function enhanceResultPanel() {
-  const resultPanel = document.querySelector(".result-panel");
-  const resultGallery = elements.resultGallery;
-  const requestDetails = elements.requestDetails;
-  const resultMeta = document.querySelector(".result-meta");
-  const rawResult = elements.rawResult;
-
-  if (!resultPanel || !resultGallery || !requestDetails || !resultMeta || !rawResult) return;
-
-  resultPanel.classList.add("result-panel-layout");
-  resultPanel.appendChild(resultGallery);
-  resultPanel.appendChild(requestDetails);
-  resultPanel.appendChild(resultMeta);
-  resultPanel.appendChild(rawResult);
+  pruneOrphanedImages();
+  cacheAllHistoryImages();
 }
 
 function attachEvents() {
@@ -210,14 +344,11 @@ function attachEvents() {
     syncModeBadge();
     renderAttachmentTray();
     renderHistory();
-    elements.taskIdValue.textContent = "-";
-    elements.taskStateValue.textContent = "-";
     elements.taskBadge.textContent = "暂无";
     setStatus("准备就绪。", "idle");
     elements.requestPreview.textContent = "尚未提交请求";
     if (elements.requestDetails) elements.requestDetails.open = false;
     renderRawResult(null);
-    renderGallery([]);
   });
 
   elements.lightboxCloseBtn.addEventListener("click", closeLightbox);
@@ -226,13 +357,6 @@ function attachEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.lightboxModal.hidden) closeLightbox();
-  });
-
-  document.addEventListener("click", (event) => {
-    const downloadTrigger = event.target.closest("[data-force-download]");
-    if (!downloadTrigger) return;
-    event.preventDefault();
-    forceDownload(downloadTrigger.dataset.forceDownload);
   });
 
   document.addEventListener("click", (event) => {
@@ -261,7 +385,7 @@ function hydrateForm(savedState = {}) {
 }
 
 function persistForm() {
-  writeCookie(STORAGE_KEY, JSON.stringify(collectFormState()), 365);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(collectFormState()));
 }
 
 function collectFormState() {
@@ -284,7 +408,7 @@ function collectFormState() {
 }
 
 function getSavedState() {
-  const raw = readCookie(STORAGE_KEY);
+  const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return {};
   try {
     return JSON.parse(raw);
@@ -294,7 +418,7 @@ function getSavedState() {
 }
 
 function getHistoryState() {
-  const raw = readCookie(HISTORY_KEY);
+  const raw = localStorage.getItem(HISTORY_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -305,7 +429,7 @@ function getHistoryState() {
 }
 
 function saveHistoryState() {
-  writeCookie(HISTORY_KEY, JSON.stringify(generationHistory), 365);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(generationHistory));
 }
 
 function addHistoryEntry(taskId, state) {
@@ -318,11 +442,33 @@ function addHistoryEntry(taskId, state) {
     createdAt: now.toISOString(),
     createdLabel: now.toLocaleString("zh-CN"),
     lastStatus: "queued",
+    errorMessage: "",
     previewImage: "",
     previewImages: [],
   };
 
   generationHistory = generationHistory.filter((item) => item.taskId !== taskId);
+  generationHistory.unshift(entry);
+  generationHistory = generationHistory.slice(0, MAX_HISTORY_ITEMS);
+  saveHistoryState();
+  renderHistory();
+}
+
+function addErrorHistoryEntry(state, errorMessage) {
+  const now = new Date();
+  const entry = {
+    taskId: `error-${Date.now()}`,
+    prompt: state.prompt.trim(),
+    mode: detectModeFromAttachments(),
+    taskLanguage: state.taskLanguage,
+    createdAt: now.toISOString(),
+    createdLabel: now.toLocaleString("zh-CN"),
+    lastStatus: "error",
+    errorMessage: errorMessage || "未知错误",
+    previewImage: "",
+    previewImages: [],
+  };
+
   generationHistory.unshift(entry);
   generationHistory = generationHistory.slice(0, MAX_HISTORY_ITEMS);
   saveHistoryState();
@@ -363,14 +509,14 @@ function renderHistory() {
         : (item.previewImage ? [item.previewImage] : []);
 
       const previewMarkup = previewImages.length
-        ? `<div class="history-thumbs">${previewImages.map((url) => `<div class="history-thumbs__item"><img src="${escapeHtml(url)}" alt="历史缩略图" data-lightbox="${escapeHtml(url)}"></div>`).join("")}</div>`
+        ? `<div class="history-thumbs">${previewImages.map((url) => `<div class="history-thumbs__item"><img src="${escapeHtml(getImageSrc(url))}" alt="历史缩略图" data-lightbox="${escapeHtml(getImageSrc(url))}" data-remote-src="${escapeHtml(url)}" loading="lazy"></div>`).join("")}</div>`
         : `<div class="history-thumb"><div class="history-placeholder">等待生成结果</div></div>`;
 
       const downloadButtons = previewImages.length
         ? `<div class="history-download-list">${previewImages
             .map(
               (url) =>
-                `<button type="button" class="secondary history-download" data-force-download="${escapeHtml(url)}">下载</button>`
+                `<a class="secondary history-download" href="/api/download?url=${encodeURIComponent(url)}" download>下载</a>`
             )
             .join("")}</div>`
         : "";
@@ -378,17 +524,18 @@ function renderHistory() {
       return `
         <article class="history-item">
           ${previewMarkup}
-          <div class="history-row">
-            <strong>${escapeHtml(modeLabel)}</strong>
-            <div class="history-actions-group">
-              <button type="button" class="ghost" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
+          <div class="history-item__body">
+            <div class="history-row">
+              <strong>${escapeHtml(modeLabel)}</strong>
+              <div class="history-actions-group">
+                <button type="button" class="ghost" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
+              </div>
             </div>
+            ${downloadButtons}
+            ${item.errorMessage ? `<div class="history-error">${escapeHtml(item.errorMessage)}</div>` : ""}
+            <div class="history-meta">提示词: ${escapeHtml(item.prompt || "无提示词")}</div>
+            <div class="history-meta">${escapeHtml(item.createdLabel || "")} · ${escapeHtml(item.lastStatus || "unknown")} · ${escapeHtml(item.taskId)}</div>
           </div>
-          ${downloadButtons}
-          <div class="history-task">${escapeHtml(item.taskId)}</div>
-          <div class="history-meta">状态: ${escapeHtml(item.lastStatus || "unknown")}</div>
-          <div class="history-meta">时间: ${escapeHtml(item.createdLabel || "")}</div>
-          <div class="history-meta">提示词: ${escapeHtml((item.prompt || "").slice(0, 80) || "无提示词")}</div>
         </article>
       `;
     })
@@ -396,6 +543,7 @@ function renderHistory() {
 
   elements.historyList.className = "history-list";
   elements.historyList.innerHTML = cards;
+  upgradeToLocalImages();
 }
 
 async function handleSubmit(event) {
@@ -414,12 +562,9 @@ async function handleSubmit(event) {
     return;
   }
 
-  setBusy(true);
   setStatus("正在提交生成任务...", "submitting");
   if (elements.requestDetails) elements.requestDetails.open = false;
   elements.requestPreview.textContent = JSON.stringify(payload, null, 2);
-  renderRawResult(null);
-  renderGallery([]);
 
   try {
     const response = await fetch("/api/generate", {
@@ -437,7 +582,9 @@ async function handleSubmit(event) {
     renderRawResult(result);
 
     if (!response.ok) {
-      throw new Error(result?.error?.message || result?.message || "任务提交失败");
+      const errMsg = result?.error?.message || result?.message || "任务提交失败";
+      addErrorHistoryEntry(state, errMsg);
+      throw new Error(errMsg);
     }
 
     const taskId =
@@ -448,18 +595,21 @@ async function handleSubmit(event) {
       result.data?.id;
 
     if (!taskId) {
-      throw new Error("响应中未找到 task_id");
+      const errMsg = "响应中未找到 task_id";
+      addErrorHistoryEntry(state, errMsg);
+      throw new Error(errMsg);
     }
 
     addHistoryEntry(taskId, state);
-    elements.taskIdValue.textContent = taskId;
-    elements.taskBadge.textContent = taskId;
+    elements.taskBadge.textContent = `${taskId} (等 ${activeTasks.size + 1} 个)`;
     setStatus(`任务已提交，正在轮询 ${taskId} ...`, "queued");
-    await pollTask(state, taskId);
+
+    pollTask(state, taskId).catch((error) => {
+      updateHistoryEntry(taskId, { lastStatus: "error", errorMessage: error.message || "轮询失败" });
+      setStatus(error.message || "轮询失败", "error");
+    });
   } catch (error) {
     setStatus(error.message || "请求失败", "error");
-  } finally {
-    setBusy(false);
   }
 }
 
@@ -508,19 +658,13 @@ async function refreshHistoryEntry(taskId) {
     taskLanguage: historyEntry?.taskLanguage || state.taskLanguage || "zh",
   };
 
-  setBusy(true);
   if (elements.requestDetails) elements.requestDetails.open = false;
-  elements.taskIdValue.textContent = taskId;
-  elements.taskBadge.textContent = taskId;
+  elements.taskBadge.textContent = `${taskId} (等 ${activeTasks.size + 1} 个)`;
   setStatus(`正在重新查询任务 ${taskId} ...`, "queued");
 
-  try {
-    await pollTask(refreshState, taskId, { skipInitialDelay: true });
-  } catch (error) {
+  pollTask(refreshState, taskId, { skipInitialDelay: true }).catch((error) => {
     setStatus(error.message || "查询失败", "error");
-  } finally {
-    setBusy(false);
-  }
+  });
 }
 
 async function pollTask(state, taskId, options = {}) {
@@ -530,57 +674,71 @@ async function pollTask(state, taskId, options = {}) {
   const timeout = Number(state.pollTimeout) || 120000;
   const startedAt = Date.now();
 
-  if (activePoll) {
-    clearTimeout(activePoll);
-    activePoll = null;
-  }
+  const abortController = new AbortController();
+  activeTasks.set(taskId, { abortController });
 
-  if (initialDelay > 0) {
-    setStatus(`任务已提交，等待 ${Math.round(initialDelay / 1000)} 秒后开始首次轮询...`, "queued");
-    await wait(initialDelay);
-  }
-
-  while (Date.now() - startedAt < timeout) {
-    const response = await fetch(pollUrl);
-    const result = await response.json();
-    renderRawResult(result);
-
-    if (!response.ok) {
-      updateHistoryEntry(taskId, { lastStatus: "error" });
-      throw new Error(result?.error?.message || result?.message || "任务状态查询失败");
+  try {
+    if (initialDelay > 0) {
+      setStatus(`任务已提交，等待 ${Math.round(initialDelay / 1000)} 秒后开始首次轮询...`, "queued");
+      await wait(initialDelay, abortController.signal);
     }
 
-    const status = extractTaskStatus(result);
-    updateHistoryEntry(taskId, { lastStatus: status });
-    elements.taskStateValue.textContent = status;
-    setStatus(buildStatusMessage(result, status), status);
+    let pollCount = 0;
+    let taskImages = [];
 
-    if (isTaskCompleted(status)) {
-      const imageUrls = extractImageUrls(result);
-      updateHistoryEntry(taskId, {
-        lastStatus: status,
-        previewImage: imageUrls[0] || "",
-        previewImages: imageUrls,
-      });
-      renderGallery(imageUrls);
-      if (!imageUrls.length) {
-        setStatus("任务已完成，但未识别到图片地址，请检查原始响应。", "warning");
-      } else {
-        setStatus(`任务已完成，共获得 ${imageUrls.length} 张图片。`, "success");
+    while (Date.now() - startedAt < timeout) {
+      if (abortController.signal.aborted) return;
+
+      pollCount += 1;
+      syncGlobalStatus();
+      setStatus(`[${taskId}] 第 ${pollCount} 次轮询...`, "processing");
+
+      const response = await fetch(pollUrl, { signal: abortController.signal });
+      const result = await response.json();
+      renderRawResult(result);
+
+      if (!response.ok) {
+        updateHistoryEntry(taskId, { lastStatus: "error" });
+        throw new Error(result?.error?.message || result?.message || "任务状态查询失败");
       }
-      return;
-    }
 
-    if (isTaskFailed(status)) {
+      const status = extractTaskStatus(result);
       updateHistoryEntry(taskId, { lastStatus: status });
-      throw new Error(extractFailureMessage(result) || `任务失败：${status}`);
+      setStatus(`[${taskId}] 第 ${pollCount} 次轮询 — ${buildStatusMessage(result, status)}`, status);
+
+      const imageUrls = extractImageUrls(result);
+      if (imageUrls.length) {
+        taskImages = imageUrls;
+        updateHistoryEntry(taskId, {
+          previewImage: imageUrls[0] || "",
+          previewImages: imageUrls,
+        });
+        for (const url of imageUrls) cacheRemoteImage(url);
+      }
+
+      if (isTaskCompleted(status)) {
+        if (!taskImages.length) {
+          setStatus("任务已完成，但未识别到图片地址，请检查原始响应。", "warning");
+        } else {
+          setStatus(`任务 ${taskId} 已完成，共获得 ${taskImages.length} 张图片。`, "success");
+        }
+        return;
+      }
+
+      if (isTaskFailed(status)) {
+        updateHistoryEntry(taskId, { lastStatus: status });
+        throw new Error(extractFailureMessage(result) || `任务失败：${status}`);
+      }
+
+      await wait(interval, abortController.signal);
     }
 
-    await wait(interval);
+    updateHistoryEntry(taskId, { lastStatus: "timeout" });
+    throw new Error("轮询超时，请稍后再试。");
+  } finally {
+    activeTasks.delete(taskId);
+    syncGlobalStatus();
   }
-
-  updateHistoryEntry(taskId, { lastStatus: "timeout" });
-  throw new Error("轮询超时，请稍后再试。");
 }
 
 async function handlePromptPaste(event) {
@@ -898,31 +1056,7 @@ function isTaskFailed(status) {
   return ["failed", "error", "cancelled", "canceled"].includes(String(status).toLowerCase());
 }
 
-function renderGallery(imageUrls) {
-  if (!imageUrls.length) {
-    elements.resultGallery.className = "gallery empty";
-    elements.resultGallery.innerHTML = "<p></p>";
-    return;
-  }
-
-  const cards = imageUrls
-    .map(
-      (url, index) => `
-        <article class="image-card">
-          <img src="${escapeHtml(url)}" alt="生成结果 ${index + 1}" data-lightbox="${escapeHtml(url)}" style="cursor:zoom-in">
-          <div class="image-card-body">
-            <strong>结果 ${index + 1}</strong>
-            <code>${escapeHtml(url)}</code>
-            <button type="button" class="btn btn--ghost btn--sm download-link" data-force-download="${escapeHtml(url)}">下载</button>
-          </div>
-        </article>
-      `
-    )
-    .join("");
-
-  elements.resultGallery.className = "gallery";
-  elements.resultGallery.innerHTML = `<div class="gallery-grid">${cards}</div>`;
-}
+function renderGallery() {}
 
 function renderRawResult(result) {
   if (!result) {
@@ -940,17 +1074,6 @@ function renderRawResult(result) {
     <pre id="rawResultContent" hidden>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
   `;
   elements.rawResultContent = elements.rawResult.querySelector("#rawResultContent");
-}
-
-function setBusy(isBusy) {
-  const controls = elements.form.querySelectorAll("button, input, textarea, select");
-  controls.forEach((control) => {
-    if (control === elements.referenceUploadInput) return;
-    control.disabled = isBusy;
-  });
-  if (!isBusy) {
-    syncSubmitAvailability();
-  }
 }
 
 function syncSubmitAvailability() {
@@ -1012,7 +1135,7 @@ function writeCookie(name, value, days) {
 }
 
 function clearStorage() {
-  writeCookie(STORAGE_KEY, "", -1);
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 function openLightbox(src) {
@@ -1025,26 +1148,24 @@ function closeLightbox() {
   elements.lightboxImage.src = "";
 }
 
-async function forceDownload(url) {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    const filename = url.split("/").pop().split("?")[0] || "image.png";
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(objectUrl);
-  } catch {
-    window.open(url, "_blank");
+function syncGlobalStatus() {
+  const count = activeTasks.size;
+  if (count === 0) {
+    elements.taskBadge.textContent = "暂无";
+    setStatus("准备就绪", "idle");
+  } else {
+    const ids = [...activeTasks.keys()];
+    elements.taskBadge.textContent = `${ids.length} 个任务进行中`;
+    setStatus(`${ids.length} 个任务轮询中 (${ids.map((id) => id.slice(0, 8)).join(", ")}...)`, "processing");
   }
 }
 
-function wait(ms) {
-  return new Promise((resolve) => {
-    activePoll = setTimeout(resolve, ms);
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      if (signal.aborted) { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); return; }
+      signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+    }
   });
 }

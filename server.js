@@ -40,6 +40,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (requestUrl.pathname === "/api/download" && req.method === "GET") {
+      await handleDownload(req, res, requestUrl);
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/proxy-image" && req.method === "GET") {
+      await handleProxyImage(req, res, requestUrl);
+      return;
+    }
+
     if (req.method !== "GET" && req.method !== "HEAD") {
       sendJson(res, 405, { error: { message: "Method not allowed" } });
       return;
@@ -56,7 +66,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`APIMart Image Bridge running at http://${HOST}:${PORT}`);
+  console.log(`APIMart Image Bridge running at http://127.0.0.1:${PORT}`);
 });
 
 async function handleGenerate(req, res) {
@@ -129,6 +139,68 @@ async function handleTaskStatus(req, res, requestUrl) {
 
   const result = await readUpstreamJson(upstream);
   sendJson(res, upstream.status, result);
+}
+
+async function handleDownload(req, res, requestUrl) {
+  const imageUrl = requestUrl.searchParams.get("url");
+  if (!imageUrl) {
+    sendJson(res, 400, { error: { message: "url parameter is required" } });
+    return;
+  }
+
+  const upstream = await fetch(imageUrl);
+  if (!upstream.ok) {
+    sendJson(res, upstream.status, { error: { message: "Failed to fetch image" } });
+    return;
+  }
+
+  const contentType = upstream.headers.get("content-type") || "image/png";
+  const body = Buffer.from(await upstream.arrayBuffer());
+
+  const extMap = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+  };
+  const ext = extMap[contentType] || ".png";
+  const filename = `image-${Date.now()}${ext}`;
+
+  res.writeHead(200, {
+    "Content-Type": contentType,
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Content-Length": body.length,
+    "Cache-Control": "no-store",
+  });
+  res.end(body);
+}
+
+async function handleProxyImage(req, res, requestUrl) {
+  const imageUrl = requestUrl.searchParams.get("url");
+  if (!imageUrl) {
+    sendJson(res, 400, { error: { message: "url parameter is required" } });
+    return;
+  }
+
+  try {
+    const upstream = await fetch(imageUrl);
+    if (!upstream.ok) {
+      sendJson(res, upstream.status, { error: { message: "Failed to fetch image" } });
+      return;
+    }
+
+    const contentType = upstream.headers.get("content-type") || "image/png";
+    const body = Buffer.from(await upstream.arrayBuffer());
+
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": body.length,
+      "Cache-Control": "public, max-age=86400",
+    });
+    res.end(body);
+  } catch (error) {
+    sendJson(res, 500, { error: { message: error.message || "Proxy fetch failed" } });
+  }
 }
 
 async function handleImageUpload(req, res) {

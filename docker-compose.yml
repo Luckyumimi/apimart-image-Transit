@@ -8,7 +8,7 @@ services:
     container_name: apimart-image-bridge
     restart: unless-stopped
     ports:
-      - "43888:43888"
+      - "127.0.0.1:43888:43888"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0

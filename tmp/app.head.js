@@ -215,8 +215,6 @@ const elements = {
   clearHistoryBtn: document.getElementById("clearHistoryBtn"),
   lightboxModal: document.getElementById("lightboxModal"),
   lightboxImage: document.getElementById("lightboxImage"),
-  lightboxPrevBtn: document.getElementById("lightboxPrevBtn"),
-  lightboxNextBtn: document.getElementById("lightboxNextBtn"),
   lightboxCloseBtn: document.getElementById("lightboxCloseBtn"),
 };
 
@@ -225,8 +223,6 @@ let selectedNegativeTemplate = DEFAULTS.selectedNegativeTemplate;
 let generationHistory = [];
 let attachmentItems = [];
 let attachmentCounter = 0;
-let lightboxItems = [];
-let lightboxIndex = 0;
 
 init();
 
@@ -356,27 +352,17 @@ function attachEvents() {
   });
 
   elements.lightboxCloseBtn.addEventListener("click", closeLightbox);
-  elements.lightboxPrevBtn.addEventListener("click", showPreviousLightboxImage);
-  elements.lightboxNextBtn.addEventListener("click", showNextLightboxImage);
   elements.lightboxModal.addEventListener("click", (event) => {
     if (event.target === elements.lightboxModal) closeLightbox();
   });
   document.addEventListener("keydown", (event) => {
-    if (elements.lightboxModal.hidden) return;
-    if (event.key === "Escape") closeLightbox();
-    if (event.key === "ArrowLeft") showPreviousLightboxImage();
-    if (event.key === "ArrowRight") showNextLightboxImage();
+    if (event.key === "Escape" && !elements.lightboxModal.hidden) closeLightbox();
   });
 
   document.addEventListener("click", (event) => {
     const img = event.target.closest("[data-lightbox]");
     if (!img) return;
-    const sources = String(img.dataset.lightboxSources || "")
-      .split("|")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const activeSrc = img.dataset.lightbox || img.getAttribute("src") || "";
-    openLightbox(sources.length ? sources : [activeSrc], activeSrc);
+    openLightbox(img.dataset.lightbox);
   });
 }
 
@@ -522,41 +508,33 @@ function renderHistory() {
         ? item.previewImages
         : (item.previewImage ? [item.previewImage] : []);
 
-      let previewMarkup = `<div class="history-thumb"><div class="history-placeholder">等待生成结果</div></div>`;
-      if (previewImages.length >= 1) {
-        const firstRemoteUrl = previewImages[0];
-        const lightboxSources = previewImages.map((url) => getImageSrc(url)).join("|");
-        previewMarkup = `<div class="history-thumb"><img src="${escapeHtml(getImageSrc(firstRemoteUrl))}" alt="历史缩略图" data-lightbox="${escapeHtml(getImageSrc(firstRemoteUrl))}" data-lightbox-sources="${escapeHtml(lightboxSources)}" data-remote-src="${escapeHtml(firstRemoteUrl)}" loading="lazy"></div>`;
-      }
+      const previewMarkup = previewImages.length
+        ? `<div class="history-thumbs">${previewImages.map((url) => `<div class="history-thumbs__item"><img src="${escapeHtml(getImageSrc(url))}" alt="历史缩略图" data-lightbox="${escapeHtml(getImageSrc(url))}" data-remote-src="${escapeHtml(url)}" loading="lazy"></div>`).join("")}</div>`
+        : `<div class="history-thumb"><div class="history-placeholder">等待生成结果</div></div>`;
 
       const downloadButtons = previewImages.length
         ? `<div class="history-download-list">${previewImages
             .map(
               (url) =>
-                `<a class="history-action history-action--download" href="/api/download?url=${encodeURIComponent(url)}" download>下载</a>`
+                `<a class="secondary history-download" href="/api/download?url=${encodeURIComponent(url)}" download>下载</a>`
             )
             .join("")}</div>`
         : "";
 
       return `
         <article class="history-item">
-          <div class="history-item__content">
-            ${previewMarkup}
-          </div>
-          <div class="history-item__panel">
-            <div class="history-item__text">
+          ${previewMarkup}
+          <div class="history-item__body">
+            <div class="history-row">
               <strong>${escapeHtml(modeLabel)}</strong>
-              ${item.errorMessage ? `<div class="history-error">${escapeHtml(item.errorMessage)}</div>` : ""}
-              <div class="history-meta">提示词: ${escapeHtml(item.prompt || "无提示词")}</div>
-            </div>
-            <div class="history-item__info">
-              <div class="history-meta">${escapeHtml(item.createdLabel || "")} · ${escapeHtml(item.lastStatus || "unknown")}</div>
-              <div class="history-task">${escapeHtml(item.taskId)}</div>
-              <div class="history-item__actions">
-                <button type="button" class="history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
-                ${downloadButtons}
+              <div class="history-actions-group">
+                <button type="button" class="ghost" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
               </div>
             </div>
+            ${downloadButtons}
+            ${item.errorMessage ? `<div class="history-error">${escapeHtml(item.errorMessage)}</div>` : ""}
+            <div class="history-meta">提示词: ${escapeHtml(item.prompt || "无提示词")}</div>
+            <div class="history-meta">${escapeHtml(item.createdLabel || "")} · ${escapeHtml(item.lastStatus || "unknown")} · ${escapeHtml(item.taskId)}</div>
           </div>
         </article>
       `;
@@ -567,6 +545,7 @@ function renderHistory() {
   elements.historyList.innerHTML = cards;
   upgradeToLocalImages();
 }
+
 async function handleSubmit(event) {
   event.preventDefault();
   persistForm();
@@ -1159,39 +1138,14 @@ function clearStorage() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-function updateLightboxImage() {
-  const src = lightboxItems[lightboxIndex] || "";
+function openLightbox(src) {
   elements.lightboxImage.src = src;
-  elements.lightboxPrevBtn.hidden = lightboxItems.length <= 1;
-  elements.lightboxNextBtn.hidden = lightboxItems.length <= 1;
-}
-
-function openLightbox(items, activeSrc = "") {
-  lightboxItems = Array.isArray(items) ? items.filter(Boolean) : [items].filter(Boolean);
-  if (!lightboxItems.length) return;
-  const matchedIndex = activeSrc ? lightboxItems.indexOf(activeSrc) : -1;
-  lightboxIndex = matchedIndex >= 0 ? matchedIndex : 0;
-  updateLightboxImage();
   elements.lightboxModal.hidden = false;
-}
-
-function showPreviousLightboxImage() {
-  if (lightboxItems.length <= 1) return;
-  lightboxIndex = (lightboxIndex - 1 + lightboxItems.length) % lightboxItems.length;
-  updateLightboxImage();
-}
-
-function showNextLightboxImage() {
-  if (lightboxItems.length <= 1) return;
-  lightboxIndex = (lightboxIndex + 1) % lightboxItems.length;
-  updateLightboxImage();
 }
 
 function closeLightbox() {
   elements.lightboxModal.hidden = true;
   elements.lightboxImage.src = "";
-  lightboxItems = [];
-  lightboxIndex = 0;
 }
 
 function syncGlobalStatus() {

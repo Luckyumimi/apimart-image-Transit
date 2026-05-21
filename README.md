@@ -1,130 +1,69 @@
-# APIMart Image Bridge
+# APIMart Image Studio
 
-## 概述
+面向 [APIMart](https://apimart.ai/zh) GPT-Image-2 接口的图像生成中转服务。提供浏览器端交互界面，通过服务端代理调用上游 API，支持文生图、图生图、多图生图。
 
-APIMart Image Bridge 是一个面向 APIMart `gpt-image-2` 接口的轻量级服务。项目提供浏览器端页面用于提交图像生成请求，并通过 Node.js 服务端代理调用上游接口，从而避免浏览器直接访问 APIMart 接口。
+## 部署方式
 
-本项目推荐采用以下部署路径：
+推荐以下两种部署路径：
 
-1. 将项目代码克隆至目标服务器
-2. 使用 Docker Compose 启动服务
-3. 通过宝塔面板或 Nginx 配置反向代理
-4. 通过域名对外提供访问
+- **面板 + Docker + 反向代理**：适用于宝塔面板环境，通过面板管理域名与证书，Docker 运行服务。
+- **纯 Docker 部署**：适用于无面板环境，Docker 直接运行，按需自行配置反向代理。
 
-## 架构说明
-
-- 应用服务默认监听 `43888` 端口
-- 前端页面通过 `/api/generate` 与 `/api/tasks/:id` 调用本服务
-- 本服务再转发请求至 `https://api.apimart.ai`
-- 用户在页面内输入 APIMart `API Key`，服务端仅用于本次请求转发
-- 任务上下文暂存于服务端内存，不写入数据库
+不推荐直接使用 `npm start` 运行。
 
 ## 运行要求
 
-### 基础要求
-
-- Git
 - Docker
 - Docker Compose
 
-### 可选要求
+可选：
 
-- 宝塔面板
+- 宝塔面板（或同类管理面板）
 - Nginx
-- 已完成解析的域名
+- 已解析的域名
 
-## 标准部署流程
+## 部署步骤
 
-### 第一步：获取项目代码
-
-在服务器上执行：
+### 1. 获取代码
 
 ```bash
 git clone https://github.com/lichi7887/apimart-image-Transit.git apimart-image-bridge
 cd apimart-image-bridge
 ```
 
-如不通过 Git 获取代码，也可将项目上传至服务器目录，例如：
+或直接将项目文件上传至服务器目录。
 
-```text
-/www/wwwroot/apimart-image-bridge
-```
-
-## 第二步：使用 Docker Compose 启动服务
-
-项目根目录已包含 [docker-compose.yml](D:/codex/apimart/apimart%20image%20Transit/docker-compose.yml)。
-
-在项目目录中执行：
+### 2. 构建并启动
 
 ```bash
 docker compose up -d --build
 ```
 
-启动完成后，建议执行以下命令确认容器状态：
+确认容器运行状态：
 
 ```bash
 docker compose ps
 ```
 
-或：
+服务默认监听 `127.0.0.1:43888`，仅接受本机回环连接。
 
-```bash
-docker ps
-```
+### 3. 验证
 
-正常情况下，服务将监听以下端口：
+在服务器本机访问 `http://127.0.0.1:43888`，页面正常打开即部署成功。
 
-```text
-0.0.0.0:43888->43888/tcp
-```
+### 4. 配置反向代理
 
-## 第三步：验证服务可用性
+通过反向代理将域名指向本机 43888 端口，实现公网访问。
 
-在服务器本机访问：
+#### 宝塔面板
 
-```text
-http://127.0.0.1:43888
-```
-
-若页面可正常打开，则说明容器启动成功。
-
-## 第四步：配置反向代理并绑定域名
-
-如使用宝塔面板，请创建网站并将该网站配置为反向代理站点。反向代理目标地址应设置为：
-
-```text
-http://127.0.0.1:43888
-```
-
-完成后，即可通过域名访问该服务。
-
-## 宝塔面板部署说明
-
-### 建站建议
-
-在宝塔面板中新建网站时：
-
-- 需要创建网站：是
-- 需要创建 FTP：否
-- 需要创建数据库：否
-
-原因如下：
-
-- 本项目通过 Docker 容器提供服务
-- 宝塔网站仅用于域名接入与反向代理
-- 当前版本不依赖 MySQL、MariaDB 或其他关系型数据库
-
-### 反向代理配置项
-
-在宝塔网站设置中新增反向代理时，建议按以下内容填写：
+在面板中新建网站（无需 FTP、无需数据库），在网站设置中添加反向代理：
 
 - 代理名称：`apimart`
 - 目标 URL：`http://127.0.0.1:43888`
 - 发送域名：`$host`
 
-## Nginx 反向代理配置示例
-
-如采用 Nginx 手工配置，可参考以下示例：
+#### Nginx
 
 ```nginx
 location / {
@@ -133,123 +72,46 @@ location / {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
 }
 ```
 
-上述配置可满足本项目当前访问需求，同时保留对升级头的兼容处理。
+HTTPS 配置按常规方式添加 SSL 证书即可，`proxy_pass` 指向不变。
 
-## HTTPS 配置示例
+## 使用说明
 
-如需通过 HTTPS 对外提供服务，可参考以下 Nginx 配置结构：
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate     /www/server/panel/vhost/cert/your-domain/fullchain.pem;
-    ssl_certificate_key /www/server/panel/vhost/cert/your-domain/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:43888;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
+1. 打开页面后，点击右上角设置按钮填写 APIMart API Key（可在 [apimart.ai/zh](https://apimart.ai/zh) 获取）
+2. 在提示词输入框中描述所需画面，支持直接粘贴图片或点击"上传图片"附件
+3. 按附件数量自动判定模式：无附件为文生图，单张为图生图，多张为多图生图
+4. 调整比例、分辨率、数量等参数后点击"开始生成"
+5. 生成结果展示在历史记录中，支持点击图片查看大图、下载到本地
 
 ## 常用运维命令
 
-### 启动或重建服务
-
 ```bash
+# 启动或重建
 docker compose up -d --build
-```
 
-### 停止服务
-
-```bash
+# 停止
 docker compose down
-```
 
-### 重启服务
-
-```bash
+# 重启
 docker compose restart
-```
 
-### 查看服务状态
-
-```bash
+# 查看状态
 docker compose ps
-```
 
-### 查看日志
-
-```bash
+# 查看日志
 docker logs -f apimart-image-bridge
 ```
 
 ## 故障排查
 
-### 1. 宝塔反向代理返回 502
-
-通常表示反向代理目标不可用。建议依次检查：
-
-```bash
-docker ps
-docker logs apimart-image-bridge
-```
-
-并确认 `43888` 端口已正常监听。
-
-### 2. 域名无法访问
-
-请重点检查以下项目：
-
-- 域名是否已解析至服务器公网 IP
-- 宝塔网站是否已正确创建
-- 反向代理是否已启用
-- 防火墙是否已放行 `80` / `443`
-- 云服务器安全组是否已放行 `80` / `443`
-
-### 3. 任务查询失败
-
-当前版本将任务上下文保存在服务端内存中。如容器重启，尚未完成的任务上下文将丢失，因此需要重新提交生成请求。
-
-## 本地开发说明
-
-本项目支持通过 Node.js 直接运行，但该方式仅建议用于本地开发或临时调试，不作为标准部署方式。
-
-```bash
-npm install
-npm start
-```
-
-默认访问地址：
-
-```text
-http://127.0.0.1:43888
-```
-
-## 生产环境注意事项
-
-- 当前版本未引入持久化任务存储
-- 如需提高稳定性，建议将任务上下文迁移至 Redis 或数据库
-- 如需多人共用，建议补充鉴权、访问控制与审计日志能力
+| 问题 | 排查方向 |
+|------|----------|
+| 反向代理 502 | 检查容器是否运行：`docker ps`、`docker logs apimart-image-bridge` |
+| 域名无法访问 | 域名解析、反向代理配置、防火墙 80/443 端口放行 |
+| 任务查询失败 | 容器重启后内存中的任务上下文会丢失，需重新提交 |
+| 图片加载缓慢 | 首次加载走代理下载，后续自动缓存至浏览器本地 |

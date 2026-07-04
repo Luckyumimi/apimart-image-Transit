@@ -27,7 +27,7 @@
 ### 1. 获取代码
 
 ```bash
-git clone https://github.com/lichi7887/apimart-image-Transit.git apimart-image-bridge
+git clone https://github.com/luckyumimi/apimart-image-Transit.git apimart-image-bridge
 cd apimart-image-bridge
 ```
 

@@ -2,6 +2,10 @@
 
 面向 [APIMart](https://apimart.ai/zh) GPT-Image-2 接口的图像生成中转服务。提供浏览器端交互界面，通过服务端代理调用上游 API，支持文生图、图生图、多图生图。
 
+## 在线演示
+
+演示站点：[https://image2.hatsuneniku.shop/](https://image2.hatsuneniku.shop/)
+
 ## 部署方式
 
 推荐以下两种部署路径：

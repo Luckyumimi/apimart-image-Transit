@@ -213,6 +213,10 @@ const elements = {
   historyList: document.getElementById("historyList"),
   refreshHistoryBtn: document.getElementById("refreshHistoryBtn"),
   clearHistoryBtn: document.getElementById("clearHistoryBtn"),
+  clearHistoryModal: document.getElementById("clearHistoryModal"),
+  cancelClearHistoryIconBtn: document.getElementById("cancelClearHistoryIconBtn"),
+  cancelClearHistoryBtn: document.getElementById("cancelClearHistoryBtn"),
+  confirmClearHistoryBtn: document.getElementById("confirmClearHistoryBtn"),
   lightboxModal: document.getElementById("lightboxModal"),
   lightboxImage: document.getElementById("lightboxImage"),
   lightboxPrevBtn: document.getElementById("lightboxPrevBtn"),
@@ -313,11 +317,12 @@ function attachEvents() {
     await refreshHistoryEntry(generationHistory[0].taskId);
   });
 
-  elements.clearHistoryBtn.addEventListener("click", () => {
-    generationHistory = [];
-    saveHistoryState();
-    renderHistory();
-    setStatus("历史记录已清空。", "idle");
+  elements.clearHistoryBtn.addEventListener("click", openClearHistoryModal);
+  elements.cancelClearHistoryIconBtn.addEventListener("click", closeClearHistoryModal);
+  elements.cancelClearHistoryBtn.addEventListener("click", closeClearHistoryModal);
+  elements.confirmClearHistoryBtn.addEventListener("click", clearHistory);
+  elements.clearHistoryModal.addEventListener("click", (event) => {
+    if (event.target === elements.clearHistoryModal) closeClearHistoryModal();
   });
 
   elements.historyList.addEventListener("click", async (event) => {
@@ -362,6 +367,10 @@ function attachEvents() {
     if (event.target === elements.lightboxModal) closeLightbox();
   });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !elements.clearHistoryModal.hidden) {
+      closeClearHistoryModal();
+      return;
+    }
     if (elements.lightboxModal.hidden) return;
     if (event.key === "Escape") closeLightbox();
     if (event.key === "ArrowLeft") showPreviousLightboxImage();
@@ -1006,6 +1015,29 @@ function openSettingsModal() {
 
 function closeSettingsModal() {
   elements.settingsModal.hidden = true;
+}
+
+function openClearHistoryModal() {
+  if (!generationHistory.length) {
+    setStatus("暂无历史记录可清空。", "idle");
+    return;
+  }
+  elements.clearHistoryModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.confirmClearHistoryBtn.focus();
+  });
+}
+
+function closeClearHistoryModal() {
+  elements.clearHistoryModal.hidden = true;
+}
+
+function clearHistory() {
+  generationHistory = [];
+  saveHistoryState();
+  renderHistory();
+  closeClearHistoryModal();
+  setStatus("历史记录已清空。", "idle");
 }
 
 function getTemplateText(templateKey) {

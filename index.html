@@ -194,6 +194,24 @@
   </div>
 </div>
 
+<div id="clearHistoryModal" class="modal-backdrop" hidden>
+  <div class="modal-card modal-card--compact" role="dialog" aria-modal="true" aria-labelledby="clearHistoryTitle">
+    <div class="modal__head">
+      <div>
+        <h2 id="clearHistoryTitle">清空历史记录？</h2>
+        <p class="modal__desc">此操作会删除本机浏览器保存的历史列表，不会取消正在进行的任务或删除已下载文件。</p>
+      </div>
+      <button id="cancelClearHistoryIconBtn" type="button" class="btn--icon" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="modal__foot">
+      <button id="cancelClearHistoryBtn" type="button" class="btn btn--ghost">取消</button>
+      <button id="confirmClearHistoryBtn" type="button" class="btn btn--danger">清空历史</button>
+    </div>
+  </div>
+</div>
+
 <div id="settingsModal" class="modal-backdrop" hidden>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal__head">

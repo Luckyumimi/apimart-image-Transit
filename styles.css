@@ -114,8 +114,8 @@ img { max-width: 100%; }
 .params > .ctrl:first-of-type { grid-column: span 2; }
 .ctrl { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .ctrl__label { display: block; color: var(--text-2); font-size: 11px; font-weight: 600; line-height: 1.3; }
-.ctrl__label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ctrl__link-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; white-space: nowrap; }
+.ctrl__label-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ctrl__link-btn { position: absolute; top: 50%; right: 0; margin-top: -17px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; white-space: nowrap; }
 
 input, textarea {
   width: 100%;

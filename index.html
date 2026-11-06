@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>APIMart Image Studio</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#171719">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -14,35 +12,45 @@
 <div class="page">
   <header class="header">
     <div class="header__brand">
-      <span class="header__tag">GPT-Image-2</span>
-      <h1 class="header__title">尼库Ai<em>生图中转站</em></h1>
+      <span class="header__tag">IMAGE STUDIO</span>
+      <h1 class="header__title">APIMart <span>Image Studio</span></h1>
     </div>
     <nav class="header__nav">
-      <div class="header__status">
+      <div class="header__status" role="status" aria-live="polite" data-state="idle">
         <span class="header__status-dot"></span>
         <span id="statusText">准备就绪</span>
       </div>
-      <button id="openSettingsBtn" type="button" class="btn--icon" aria-label="设置">
+      <button id="openSettingsBtn" type="button" class="launcher-button launcher-button--compact" aria-label="设置">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
     </nav>
   </header>
 
-  <div class="result-intro-banner" style="display:none"><p></p></div>
-
   <main class="main">
     <section class="col col--composer">
       <div class="card card--primary">
         <div class="card__head">
-          <h2>控制台</h2>
-          <span class="pill">Prompt</span>
+          <div>
+            <h2>生成图片</h2>
+            <p class="section-copy">描述画面，设置输出参数，提交后可在右侧跟踪任务。</p>
+          </div>
+          <span class="pill">2.6</span>
         </div>
 
         <form id="imageForm" class="form">
           <fieldset class="params">
             <legend class="sr-only">参数</legend>
-            <label class="ctrl">
-              <span class="ctrl__label">比例</span>
+            <div class="ctrl">
+              <label class="ctrl__label" for="modelVariant">模型</label>
+              <select id="modelVariant" name="modelVariant">
+                <option value="gpt-image-2.6-flare">2.6 Flare</option>
+                <option value="gpt-image-2.6-sunburst">2.6 Sunburst</option>
+                <option value="gpt-image-2.6-ext-flare">2.6 Ext Flare</option>
+                <option value="gpt-image-2.6-ext-sunburst">2.6 Ext Sunburst</option>
+              </select>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="aspectRatio">比例</label>
               <select id="aspectRatio" name="aspectRatio">
                 <option value="auto">自动</option>
                 <option value="1:1">1 : 1</option>
@@ -58,80 +66,85 @@
                 <option value="1:2">1 : 2</option>
                 <option value="21:9">21 : 9</option>
                 <option value="9:21">9 : 21</option>
+                <option value="3:1">3 : 1</option>
+                <option value="1:3">1 : 3</option>
               </select>
-            </label>
-            <label class="ctrl">
-              <span class="ctrl__label">分辨率</span>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="resolution">分辨率</label>
               <select id="resolution" name="resolution">
                 <option value="1k">1K</option>
                 <option value="2k">2K</option>
                 <option value="4k">4K</option>
               </select>
-            </label>
-            <label class="ctrl">
-              <span class="ctrl__label">格式</span>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="outputFormat">格式</label>
               <select id="outputFormat" name="outputFormat">
                 <option value="">默认</option>
                 <option value="png">PNG</option>
                 <option value="jpeg">JPEG</option>
                 <option value="webp">WebP</option>
+                <option value="gif">GIF</option>
+                <option value="svg">SVG</option>
               </select>
-            </label>
-            <label class="ctrl">
-              <span class="ctrl__label">数量</span>
-              <input id="imageCount" name="imageCount" type="number" min="1" max="4" value="1">
-            </label>
-            <label class="ctrl">
-              <span class="ctrl__label">背景</span>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="quality">质量</label>
+              <select id="quality" name="quality">
+                <option value="">自动</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="xhigh">极高</option>
+                <option value="max">最大</option>
+              </select>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="complexity">复杂度</label>
+              <select id="complexity" name="complexity">
+                <option value="">自动</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="imageCount">数量</label>
+              <div class="field-shell">
+                <input id="imageCount" class="launcher-input" name="imageCount" type="number" min="1" max="4" value="1">
+              </div>
+            </div>
+            <div class="ctrl">
+              <label class="ctrl__label" for="background">背景</label>
               <select id="background" name="background">
                 <option value="">默认</option>
                 <option value="transparent">透明</option>
                 <option value="opaque">不透明</option>
               </select>
-            </label>
+            </div>
           </fieldset>
 
           <div class="composer-box">
             <div class="composer-box__head">
-              <span class="ctrl__label">提示词</span>
+              <label class="ctrl__label" for="prompt">提示词</label>
               <div class="composer-actions">
-                <label class="btn btn--ghost btn--sm composer-upload-btn" for="referenceUploadInput">上传图片</label>
+                <button id="uploadReferenceBtn" type="button" class="launcher-button launcher-button--compact composer-upload-btn">上传图片</button>
                 <input id="referenceUploadInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
               </div>
             </div>
 
             <div id="attachmentTray" class="attachment-tray" hidden></div>
 
-            <label class="ctrl ctrl--full">
-              <textarea id="prompt" name="prompt" rows="7" placeholder="描述你想要的画面，或直接在这里粘贴图片..." required></textarea>
-            </label>
+            <div class="field-shell field-shell--multiline">
+              <textarea id="prompt" class="launcher-input launcher-input--multiline" name="prompt" rows="7" placeholder="描述你想要的画面，也可以在这里粘贴图片..." required></textarea>
+            </div>
             <p class="composer-hint">单张图片自动按图生图提交，多张图片按粘贴顺序作为多图输入。</p>
           </div>
 
-          <details class="negative-panel fold">
-            <summary class="fold__head">
-              <span class="fold__title">反向提示词</span>
-              <span class="fold__hint negative-summary-text">通用 / 人物 / 二次元模板 + 自定义</span>
-              <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </summary>
-            <div class="fold__body negative-panel-body">
-              <div class="chips" id="negativeTemplateTabs">
-                <button type="button" class="chip template-chip active" data-template="general">通用</button>
-                <button type="button" class="chip template-chip" data-template="portrait">人物</button>
-                <button type="button" class="chip template-chip" data-template="anime">二次元</button>
-                <button type="button" class="chip template-chip" data-template="custom">自定义</button>
-              </div>
-              <label class="ctrl ctrl--full">
-                <span class="ctrl__label">反向提示词内容</span>
-                <textarea id="negativePrompt" name="negativePrompt" rows="5" placeholder="不希望出现的内容..."></textarea>
-              </label>
-              <button id="clearNegativeBtn" type="button" class="btn btn--ghost btn--sm">清空</button>
-            </div>
-          </details>
-
           <div class="form__foot">
-            <button type="submit" class="btn btn--accent">开始生成</button>
-            <button id="resetBtn" type="button" class="btn btn--ghost">重置</button>
+            <button type="submit" class="launcher-button launcher-button--primary">开始生成</button>
+            <button id="resetBtn" type="button" class="launcher-button">重置</button>
           </div>
         </form>
       </div>
@@ -165,10 +178,13 @@
 
       <div class="card history-panel">
         <div class="card__head">
-          <h2>历史</h2>
+          <div>
+            <h2>生成历史</h2>
+            <p class="section-copy">任务状态与已完成图片保存在此浏览器中。</p>
+          </div>
           <div class="card__head-actions">
-            <button id="refreshHistoryBtn" type="button" class="btn btn--ghost btn--sm">刷新</button>
-            <button id="clearHistoryBtn" type="button" class="btn btn--ghost btn--sm">清空</button>
+            <button id="refreshHistoryBtn" type="button" class="launcher-button launcher-button--compact">刷新</button>
+            <button id="clearHistoryBtn" type="button" class="launcher-button launcher-button--compact">清空</button>
           </div>
         </div>
         <div id="historyList" class="history-list empty">
@@ -206,8 +222,8 @@
       </button>
     </div>
     <div class="modal__foot">
-      <button id="cancelClearHistoryBtn" type="button" class="btn btn--ghost">取消</button>
-      <button id="confirmClearHistoryBtn" type="button" class="btn btn--danger">清空历史</button>
+      <button id="cancelClearHistoryBtn" type="button" class="launcher-button">取消</button>
+      <button id="confirmClearHistoryBtn" type="button" class="launcher-button launcher-button--primary">清空历史</button>
     </div>
   </div>
 </div>
@@ -224,48 +240,51 @@
       </button>
     </div>
     <div class="modal__body settings-grid">
-      <label class="ctrl">
-        <span class="ctrl__label">API 地址</span>
-        <input id="fixedBaseUrl" type="text" value="https://api.apimart.ai" readonly>
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label-row">
-          <span class="ctrl__label">API Key</span>
-          <a class="btn btn--ghost btn--sm ctrl__link-btn" href="https://apimart.ai/zh" target="_blank" rel="noopener noreferrer">获取 Key</a>
-        </span>
-        <input id="apiKey" name="apiKey" type="password" placeholder="sk-..." required>
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label">任务语言</span>
+      <div class="ctrl">
+        <label class="ctrl__label" for="fixedBaseUrl">API 地址</label>
+        <div class="field-shell disabled">
+          <input id="fixedBaseUrl" class="launcher-input" type="text" value="https://api.apimart.ai" readonly>
+        </div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl__label-row">
+          <label class="ctrl__label" for="apiKey">API Key</label>
+          <a class="launcher-button launcher-button--compact ctrl__link-btn" href="https://apimart.ai/zh" target="_blank" rel="noopener noreferrer">获取 Key</a>
+        </div>
+        <div class="field-shell">
+          <input id="apiKey" class="launcher-input" name="apiKey" type="password" placeholder="sk-..." required>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label class="ctrl__label" for="taskLanguage">任务语言</label>
         <select id="taskLanguage" name="taskLanguage">
           <option value="zh">中文</option>
           <option value="en">English</option>
           <option value="ko">한국어</option>
           <option value="ja">日本語</option>
         </select>
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label">官方回退</span>
-        <select id="officialFallback" name="officialFallback">
-          <option value="false">关闭</option>
-          <option value="true">开启</option>
-        </select>
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label">轮询间隔 (ms)</span>
-        <input id="pollInterval" name="pollInterval" type="number" min="1000" step="500" value="3000">
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label">首次延迟 (ms)</span>
-        <input id="initialPollDelay" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
-      </label>
-      <label class="ctrl">
-        <span class="ctrl__label">超时 (ms)</span>
-        <input id="pollTimeout" name="pollTimeout" type="number" min="5000" step="1000" value="120000">
-      </label>
+      </div>
+      <div class="ctrl">
+        <label class="ctrl__label" for="pollInterval">轮询间隔 (ms)</label>
+        <div class="field-shell">
+          <input id="pollInterval" class="launcher-input" name="pollInterval" type="number" min="1000" step="500" value="3000">
+        </div>
+      </div>
+      <div class="ctrl">
+        <label class="ctrl__label" for="initialPollDelay">首次延迟 (ms)</label>
+        <div class="field-shell">
+          <input id="initialPollDelay" class="launcher-input" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
+        </div>
+      </div>
+      <div class="ctrl">
+        <label class="ctrl__label" for="pollTimeout">超时 (ms)</label>
+        <div class="field-shell">
+          <input id="pollTimeout" class="launcher-input" name="pollTimeout" type="number" min="5000" step="1000" value="120000">
+        </div>
+      </div>
     </div>
     <div class="modal__foot">
-      <button id="saveSettingsBtn" type="button" class="btn btn--accent">保存并关闭</button>
+      <button id="saveSettingsBtn" type="button" class="launcher-button launcher-button--primary">保存并关闭</button>
     </div>
   </div>
 </div>

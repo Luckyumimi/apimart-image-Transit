@@ -153,27 +153,18 @@ async function loadBlobCache() {
   } catch {}
 }
 
-const NEGATIVE_TEMPLATES = {
-  general:
-    "worst quality, low quality, normal quality, lowres, blurry, out of focus, noise, grain, jpeg artifacts, watermark, cropped, out of frame, duplicate, extra limbs, extra fingers, missing fingers, fused fingers, malformed hands, bad hands, bad anatomy, deformed, disfigured, mutated, unnatural pose, broken limbs, long neck, cross-eye, lazy eye, asymmetrical eyes, bad face, distorted face, poorly drawn face, poorly drawn hands, extra arms, extra legs, missing arms, missing legs, floating limbs, disconnected limbs, inaccurate proportions, ugly, messy background, cluttered background, oversaturated, underexposed, overexposed",
-  portrait:
-    "worst quality, low quality, lowres, blurry, bad anatomy, bad proportions, deformed, disfigured, malformed hands, extra fingers, fused fingers, missing fingers, bad hands, extra limbs, missing limbs, unnatural pose, twisted body, broken body, distorted face, asymmetrical eyes, cross-eyed, poorly drawn face, poorly drawn hands, ugly, duplicate, watermark, jpeg artifacts",
-  anime:
-    "bad composition, flat color, messy lines, sketch, unfinished, rough draft, bad perspective, inconsistent lighting, extra character, duplicated features, lowres, blurry, worst quality, low quality, deformed, bad anatomy",
-};
-
 const DEFAULTS = {
+  modelVariant: "gpt-image-2.6-flare",
   aspectRatio: "auto",
   resolution: "1k",
   outputFormat: "",
+  quality: "",
+  complexity: "",
   imageCount: "1",
-  officialFallback: "false",
   taskLanguage: "zh",
   pollInterval: "3000",
   initialPollDelay: "12000",
   pollTimeout: "120000",
-  selectedNegativeTemplate: "general",
-  negativePrompt: NEGATIVE_TEMPLATES.general,
 };
 
 const elements = {
@@ -184,29 +175,30 @@ const elements = {
   settingsModal: document.getElementById("settingsModal"),
   apiKey: document.getElementById("apiKey"),
   fixedBaseUrl: document.getElementById("fixedBaseUrl"),
+  modelVariant: document.getElementById("modelVariant"),
   aspectRatio: document.getElementById("aspectRatio"),
   resolution: document.getElementById("resolution"),
   outputFormat: document.getElementById("outputFormat"),
+  quality: document.getElementById("quality"),
+  complexity: document.getElementById("complexity"),
   imageCount: document.getElementById("imageCount"),
   prompt: document.getElementById("prompt"),
-  negativePrompt: document.getElementById("negativePrompt"),
   background: document.getElementById("background"),
-  officialFallback: document.getElementById("officialFallback"),
   taskLanguage: document.getElementById("taskLanguage"),
   pollInterval: document.getElementById("pollInterval"),
   initialPollDelay: document.getElementById("initialPollDelay"),
   pollTimeout: document.getElementById("pollTimeout"),
   referenceUploadInput: document.getElementById("referenceUploadInput"),
+  uploadReferenceBtn: document.getElementById("uploadReferenceBtn"),
   attachmentTray: document.getElementById("attachmentTray"),
   submitBtn: document.querySelector('#imageForm button[type="submit"]'),
   resetBtn: document.getElementById("resetBtn"),
-  clearNegativeBtn: document.getElementById("clearNegativeBtn"),
-  negativeTemplateTabs: document.getElementById("negativeTemplateTabs"),
   statusText: document.getElementById("statusText"),
   requestPreview: document.getElementById("requestPreview"),
   requestDetails: document.getElementById("requestDetails"),
   rawResult: document.getElementById("rawResult"),
   rawResultContent: document.getElementById("rawResultContent"),
+  headerStatus: document.querySelector(".header__status"),
   modeBadge: document.getElementById("modeBadge"),
   statusBadge: document.getElementById("statusBadge"),
   taskBadge: document.getElementById("taskBadge"),
@@ -225,22 +217,21 @@ const elements = {
 };
 
 let activeTasks = new Map();
-let selectedNegativeTemplate = DEFAULTS.selectedNegativeTemplate;
 let generationHistory = [];
 let attachmentItems = [];
 let attachmentCounter = 0;
 let lightboxItems = [];
 let lightboxIndex = 0;
+let activeSelectPicker = null;
 
 init();
 
 function init() {
   const savedState = getSavedState();
   generationHistory = getHistoryState();
-  selectedNegativeTemplate = savedState.selectedNegativeTemplate || DEFAULTS.selectedNegativeTemplate;
   hydrateForm(savedState);
+  enhanceSelects();
   syncModeBadge();
-  syncTemplateUI();
   loadBlobCache().then(() => {
     renderHistory();
   });
@@ -268,45 +259,16 @@ function attachEvents() {
   });
 
   elements.form.addEventListener("input", persistForm);
+  elements.form.addEventListener("change", persistForm);
   elements.form.addEventListener("submit", handleSubmit);
   elements.prompt.addEventListener("paste", handlePromptPaste);
   elements.referenceUploadInput.addEventListener("change", handleReferenceUpload);
+  elements.uploadReferenceBtn.addEventListener("click", () => elements.referenceUploadInput.click());
 
   elements.attachmentTray.addEventListener("click", (event) => {
     const removeButton = event.target.closest("[data-remove-attachment-id]");
     if (!removeButton) return;
     removeAttachment(removeButton.dataset.removeAttachmentId);
-  });
-
-  elements.negativeTemplateTabs.addEventListener("click", (event) => {
-    const button = event.target.closest(".template-chip");
-    if (!button) return;
-    selectedNegativeTemplate = button.dataset.template || "general";
-    if (selectedNegativeTemplate === "custom") {
-      elements.negativePrompt.value = "";
-    } else {
-      elements.negativePrompt.value = getTemplateText(selectedNegativeTemplate);
-    }
-    syncTemplateUI();
-    persistForm();
-  });
-
-  elements.clearNegativeBtn.addEventListener("click", () => {
-    elements.negativePrompt.value = "";
-    selectedNegativeTemplate = "custom";
-    syncTemplateUI();
-    persistForm();
-  });
-
-  elements.negativePrompt.addEventListener("input", (event) => {
-    if (event.isComposing) return;
-    if (selectedNegativeTemplate !== "custom") {
-      const templateText = getTemplateText(selectedNegativeTemplate);
-      if (elements.negativePrompt.value !== templateText) {
-        selectedNegativeTemplate = "custom";
-        syncTemplateUI();
-      }
-    }
   });
 
   elements.refreshHistoryBtn.addEventListener("click", async () => {
@@ -345,11 +307,9 @@ function attachEvents() {
   elements.resetBtn.addEventListener("click", () => {
     clearStorage();
     generationHistory = getHistoryState();
-    selectedNegativeTemplate = DEFAULTS.selectedNegativeTemplate;
     attachmentItems.forEach(revokeAttachmentPreview);
     attachmentItems = [];
     hydrateForm(DEFAULTS);
-    syncTemplateUI();
     syncModeBadge();
     renderAttachmentTray();
     renderHistory();
@@ -393,18 +353,192 @@ function hydrateForm(savedState = {}) {
   const state = { ...DEFAULTS, ...savedState };
   elements.fixedBaseUrl.value = FIXED_BASE_URL;
   elements.apiKey.value = state.apiKey || "";
+  elements.modelVariant.value = state.modelVariant || DEFAULTS.modelVariant;
   elements.aspectRatio.value = state.aspectRatio || DEFAULTS.aspectRatio;
   elements.resolution.value = state.resolution || DEFAULTS.resolution;
   elements.outputFormat.value = state.outputFormat || DEFAULTS.outputFormat;
+  elements.quality.value = state.quality || DEFAULTS.quality;
+  elements.complexity.value = state.complexity || DEFAULTS.complexity;
   elements.imageCount.value = state.imageCount || DEFAULTS.imageCount;
   elements.prompt.value = state.prompt || "";
-  elements.negativePrompt.value = state.negativePrompt || DEFAULTS.negativePrompt;
   elements.background.value = state.background || "";
-  elements.officialFallback.value = state.officialFallback || DEFAULTS.officialFallback;
   elements.taskLanguage.value = state.taskLanguage || DEFAULTS.taskLanguage;
   elements.pollInterval.value = state.pollInterval || DEFAULTS.pollInterval;
   elements.initialPollDelay.value = state.initialPollDelay || DEFAULTS.initialPollDelay;
   elements.pollTimeout.value = state.pollTimeout || DEFAULTS.pollTimeout;
+  syncSelectPickers();
+}
+
+function enhanceSelects() {
+  document.querySelectorAll("select").forEach((select) => {
+    if (select.dataset.enhanced === "true") return;
+
+    const control = select.closest(".ctrl");
+    const label = control?.querySelector(`label[for="${select.id}"]`);
+    const picker = document.createElement("div");
+    const trigger = document.createElement("button");
+    const value = document.createElement("span");
+    const chevron = document.createElement("span");
+    const options = document.createElement("div");
+    const listId = `${select.id}-options`;
+
+    picker.className = "display-picker";
+    picker.setAttribute("data-picker", "");
+    trigger.type = "button";
+    trigger.className = "picker-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", listId);
+    if (label) {
+      if (!label.id) label.id = `${select.id}-label`;
+      trigger.setAttribute("aria-labelledby", label.id);
+    }
+    value.className = "picker-value";
+    chevron.className = "picker-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    trigger.append(value, chevron);
+
+    options.id = listId;
+    options.className = "picker-options";
+    options.setAttribute("role", "listbox");
+    options.setAttribute("aria-labelledby", label?.id || select.id);
+
+    [...select.options].forEach((option, index) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.dataset.value = option.value;
+      item.dataset.index = String(index);
+      item.textContent = option.textContent.trim();
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(option.selected));
+      item.disabled = option.disabled;
+      item.addEventListener("click", () => {
+        select.value = option.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        closeSelectPicker(picker, true);
+      });
+      options.append(item);
+    });
+
+    picker.append(trigger, options);
+    select.after(picker);
+    select.classList.add("select-native");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+    select.dataset.enhanced = "true";
+
+    const instance = { select, picker, trigger, options, value };
+    trigger.addEventListener("click", () => {
+      if (picker.classList.contains("is-open")) closeSelectPicker(picker);
+      else openSelectPicker(instance, false);
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      openSelectPicker(instance, event.key === "ArrowUp");
+    });
+    options.addEventListener("keydown", (event) => handleSelectPickerKeydown(event, instance));
+    select.addEventListener("change", () => syncSelectPicker(instance));
+    select._pickerInstance = instance;
+    syncSelectPicker(instance);
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      activeSelectPicker &&
+      !activeSelectPicker.picker.contains(event.target)
+    ) {
+      closeSelectPicker(activeSelectPicker.picker);
+    }
+  });
+  window.addEventListener("resize", repositionActiveSelectPicker);
+  window.addEventListener("scroll", repositionActiveSelectPicker, true);
+}
+
+function syncSelectPickers() {
+  document.querySelectorAll("select[data-enhanced='true']").forEach((select) => {
+    if (select._pickerInstance) syncSelectPicker(select._pickerInstance);
+  });
+}
+
+function syncSelectPicker(instance) {
+  const selected = instance.select.selectedOptions[0];
+  instance.value.textContent = selected?.textContent.trim() || "请选择";
+  instance.options.querySelectorAll("[role='option']").forEach((item) => {
+    item.setAttribute("aria-selected", String(item.dataset.value === instance.select.value));
+  });
+}
+
+function openSelectPicker(instance, fromEnd) {
+  if (activeSelectPicker && activeSelectPicker !== instance) {
+    closeSelectPicker(activeSelectPicker.picker);
+  }
+  activeSelectPicker = instance;
+  instance.picker.classList.add("is-open");
+  instance.trigger.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => positionSelectPicker(instance));
+  const enabled = [...instance.options.querySelectorAll("[role='option']:not(:disabled)")];
+  const selectedIndex = enabled.findIndex((item) => item.getAttribute("aria-selected") === "true");
+  const target = fromEnd ? enabled.at(-1) : enabled[Math.max(0, selectedIndex)];
+  target?.focus();
+  target?.scrollIntoView({ block: "nearest" });
+}
+
+function closeSelectPicker(picker, restoreFocus = false) {
+  if (!picker) return;
+  const trigger = picker.querySelector(".picker-trigger");
+  picker.classList.remove("is-open");
+  trigger?.setAttribute("aria-expanded", "false");
+  if (activeSelectPicker?.picker === picker) activeSelectPicker = null;
+  if (restoreFocus) trigger?.focus();
+}
+
+function positionSelectPicker(instance) {
+  const rect = instance.trigger.getBoundingClientRect();
+  const gap = 7;
+  const menuStyle = getComputedStyle(instance.options);
+  const rows = [...instance.options.children];
+  const rowGap = parseFloat(menuStyle.rowGap) || 0;
+  const verticalPadding = 12;
+  const rowsHeight = rows.reduce((total, row) => total + row.getBoundingClientRect().height, 0);
+  const contentHeight = Math.min(280, rowsHeight + rowGap * Math.max(0, rows.length - 1) + verticalPadding);
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - gap);
+  const spaceAbove = Math.max(0, rect.top - gap);
+  const opensAbove = spaceBelow < contentHeight && spaceAbove > spaceBelow;
+  const maxHeight = Math.max(0, Math.min(contentHeight, opensAbove ? spaceAbove : spaceBelow));
+  instance.picker.style.setProperty("--dropdown-top", `${Math.max(8, opensAbove ? rect.top - gap - maxHeight : rect.bottom + gap)}px`);
+  instance.picker.style.setProperty("--dropdown-left", `${rect.left}px`);
+  instance.picker.style.setProperty("--dropdown-width", `${rect.width}px`);
+  instance.picker.style.setProperty("--dropdown-max-height", `${maxHeight}px`);
+}
+
+function repositionActiveSelectPicker() {
+  if (activeSelectPicker) positionSelectPicker(activeSelectPicker);
+}
+
+function handleSelectPickerKeydown(event, instance) {
+  const items = [...instance.options.querySelectorAll("[role='option']:not(:disabled)")];
+  const currentIndex = items.indexOf(document.activeElement);
+  let nextIndex = currentIndex;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeSelectPicker(instance.picker, true);
+    return;
+  }
+  if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+  else if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = items.length - 1;
+  else if (event.key === "Tab") {
+    closeSelectPicker(instance.picker);
+    return;
+  } else return;
+
+  event.preventDefault();
+  items[nextIndex]?.focus();
+  items[nextIndex]?.scrollIntoView({ block: "nearest" });
 }
 
 function persistForm() {
@@ -414,19 +548,19 @@ function persistForm() {
 function collectFormState() {
   return {
     apiKey: elements.apiKey.value.trim(),
+    modelVariant: elements.modelVariant.value,
     aspectRatio: elements.aspectRatio.value,
     resolution: elements.resolution.value,
     outputFormat: elements.outputFormat.value,
+    quality: elements.quality.value,
+    complexity: elements.complexity.value,
     imageCount: elements.imageCount.value,
     prompt: elements.prompt.value,
-    negativePrompt: elements.negativePrompt.value,
     background: elements.background.value,
-    officialFallback: elements.officialFallback.value,
     taskLanguage: elements.taskLanguage.value,
     pollInterval: elements.pollInterval.value,
     initialPollDelay: elements.initialPollDelay.value,
     pollTimeout: elements.pollTimeout.value,
-    selectedNegativeTemplate,
   };
 }
 
@@ -542,7 +676,7 @@ function renderHistory() {
         ? `<div class="history-download-list">${previewImages
             .map(
               (url) =>
-                `<a class="history-action history-action--download" href="/api/download?url=${encodeURIComponent(url)}" download>下载</a>`
+                `<a class="launcher-button launcher-button--compact history-action history-action--download" href="/api/download?url=${encodeURIComponent(url)}" download>下载</a>`
             )
             .join("")}</div>`
         : "";
@@ -562,7 +696,7 @@ function renderHistory() {
               <div class="history-meta">${escapeHtml(item.createdLabel || "")} · ${escapeHtml(item.lastStatus || "unknown")}</div>
               <div class="history-task">${escapeHtml(item.taskId)}</div>
               <div class="history-item__actions">
-                <button type="button" class="history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
+                <button type="button" class="launcher-button launcher-button--compact history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
                 ${downloadButtons}
               </div>
             </div>
@@ -595,6 +729,7 @@ async function handleSubmit(event) {
   setStatus("正在提交生成任务...", "submitting");
   if (elements.requestDetails) elements.requestDetails.open = false;
   elements.requestPreview.textContent = JSON.stringify(payload, null, 2);
+  elements.requestDetails.hidden = false;
 
   try {
     const response = await fetch("/api/generate", {
@@ -645,26 +780,31 @@ async function handleSubmit(event) {
 
 function buildPayload(state) {
   const references = getUploadedReferenceUrls();
+  const isExt = state.modelVariant.startsWith("gpt-image-2.6-ext-");
+  const version = state.modelVariant.endsWith("sunburst") ? "sunburst" : "flare";
+  const model = isExt ? "gpt-image-2.6-ext" : `gpt-image-2.6-${version}`;
   const payload = {
-    model: "gpt-image-2",
+    model,
     prompt: state.prompt.trim(),
     size: state.aspectRatio,
     resolution: state.resolution,
     n: Number(state.imageCount) || 1,
-    response_format: "url",
   };
 
   if (!payload.prompt) {
     throw new Error("提示词不能为空。");
   }
 
-  validateResolution(state.aspectRatio, state.resolution);
+  validateResolution(state, isExt);
 
-  if (state.negativePrompt.trim()) payload.negative_prompt = state.negativePrompt.trim();
+  if (state.quality) payload.quality = state.quality;
+  if (state.complexity) payload.complexity = state.complexity;
   if (state.background) payload.background = state.background;
   if (state.outputFormat) payload.output_format = state.outputFormat;
-  payload.official_fallback = state.officialFallback === "true";
-  payload.lang = state.taskLanguage;
+
+  if (isExt) {
+    payload.version = version;
+  }
 
   if (references.length) {
     payload.image_urls = references;
@@ -673,10 +813,28 @@ function buildPayload(state) {
   return payload;
 }
 
-function validateResolution(aspectRatio, resolution) {
-  const unsupported = resolution === "4k" && ["21:9", "9:21"].includes(aspectRatio);
-  if (unsupported) {
-    throw new Error("当前比例暂不支持 4K，请切换到 1K / 2K 或调整比例。");
+function validateResolution(state, isExt) {
+  const extRatios = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"];
+  if (isExt && !extRatios.includes(state.aspectRatio)) {
+    throw new Error("2.6 Ext 不支持当前比例，请选择自动或文档列出的 1K 比例。");
+  }
+  if (isExt && state.resolution !== "1k") {
+    throw new Error("2.6 Ext 当前仅支持 1K 分辨率。");
+  }
+  if (isExt && Number(state.imageCount) !== 1) {
+    throw new Error("2.6 Ext 当前仅支持生成 1 张图片。");
+  }
+  if (state.outputFormat === "gif" && state.aspectRatio !== "auto") {
+    throw new Error("GIF 输出的比例必须使用自动。");
+  }
+  if (state.outputFormat === "svg" && getUploadedReferenceUrls().length) {
+    throw new Error("SVG 输出不支持参考图。");
+  }
+  if (state.outputFormat === "svg" && Number(state.imageCount) !== 1) {
+    throw new Error("SVG 输出仅支持生成 1 张图片。");
+  }
+  if (state.outputFormat === "gif" && isExt && getUploadedReferenceUrls().length) {
+    throw new Error("2.6 Ext 的 GIF 仅支持文生图，不支持参考图。");
   }
 }
 
@@ -999,13 +1157,6 @@ function syncModeBadge() {
   elements.modeBadge.textContent = labelMap[mode] || "文生图";
 }
 
-function syncTemplateUI() {
-  const buttons = elements.negativeTemplateTabs.querySelectorAll(".template-chip");
-  buttons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.template === selectedNegativeTemplate);
-  });
-}
-
 function openSettingsModal() {
   elements.settingsModal.hidden = false;
   requestAnimationFrame(() => {
@@ -1040,13 +1191,6 @@ function clearHistory() {
   setStatus("历史记录已清空。", "idle");
 }
 
-function getTemplateText(templateKey) {
-  if (templateKey === "custom") {
-    return "";
-  }
-  return NEGATIVE_TEMPLATES[templateKey] || NEGATIVE_TEMPLATES.general;
-}
-
 function extractTaskStatus(result) {
   return (
     result.status ||
@@ -1070,6 +1214,10 @@ function extractImageUrls(result) {
     result.data?.result?.images,
     result.data?.images,
     result.images,
+    result.data?.result?.files,
+    result.data?.files,
+    result.result?.files,
+    result.files,
   ];
 
   for (const candidate of candidates) {
@@ -1081,6 +1229,9 @@ function extractImageUrls(result) {
       }
       if (typeof item?.url === "string") {
         urls.add(item.url);
+      }
+      if (typeof item?.image_url === "string") {
+        urls.add(item.image_url);
       }
       if (Array.isArray(item?.url)) {
         item.url.filter(Boolean).forEach((value) => urls.add(value));
@@ -1122,7 +1273,7 @@ function renderRawResult(result) {
   elements.rawResult.innerHTML = `
     <div class="raw-result__head">
       <h3 class="raw-result__title">原始响应</h3>
-      <button type="button" class="ghost" data-raw-toggle aria-expanded="false">展开</button>
+      <button type="button" class="launcher-button launcher-button--compact" data-raw-toggle aria-expanded="false">展开</button>
     </div>
     <pre id="rawResultContent" hidden>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
   `;
@@ -1138,6 +1289,8 @@ function syncSubmitAvailability() {
 function setStatus(message, state) {
   elements.statusText.textContent = message;
   elements.statusBadge.textContent = mapStatusLabel(state);
+  elements.statusBadge.dataset.state = state || "idle";
+  elements.headerStatus.dataset.state = state || "idle";
 }
 
 function buildStatusMessage(result, status) {

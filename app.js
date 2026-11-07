@@ -106,7 +106,13 @@ async function pruneOrphanedImages() {
     const req = store.getAllKeys();
     req.onsuccess = () => {
       for (const key of req.result) {
-        if (!keptUrls.has(key)) store.delete(key);
+        if (keptUrls.has(key)) continue;
+        store.delete(key);
+        const objectUrl = blobUrlCache.get(key);
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          blobUrlCache.delete(key);
+        }
       }
       resolve();
     };
@@ -241,6 +247,9 @@ const elements = {
   cancelClearHistoryIconBtn: document.getElementById("cancelClearHistoryIconBtn"),
   cancelClearHistoryBtn: document.getElementById("cancelClearHistoryBtn"),
   confirmClearHistoryBtn: document.getElementById("confirmClearHistoryBtn"),
+  historyDetailModal: document.getElementById("historyDetailModal"),
+  historyDetailMedia: document.getElementById("historyDetailMedia"),
+  historyDetailContent: document.getElementById("historyDetailContent"),
   lightboxModal: document.getElementById("lightboxModal"),
   lightboxImage: document.getElementById("lightboxImage"),
   lightboxPrevBtn: document.getElementById("lightboxPrevBtn"),
@@ -265,6 +274,8 @@ let lastFlexibleImageCount = null;
 let previousControlMode = null;
 let sizeDialogDraft = null;
 let sizePreviewObserver = null;
+let historyDetailTaskId = "";
+let historyDetailOpener = null;
 let fileDragDepth = 0;
 
 init();
@@ -292,6 +303,7 @@ function init() {
   renderAttachmentTray();
   syncSubmitAvailability();
   attachEvents();
+  window.setInterval(updateHistoryElapsed, 1000);
   pruneOrphanedImages();
   cacheAllHistoryImages();
 }
@@ -325,7 +337,9 @@ function attachEvents() {
   elements.customHeightInput.addEventListener("input", updateSizeDialog);
   elements.toggleDiagnosticsBtn.addEventListener("click", toggleDiagnostics);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !elements.settingsModal.hidden) {
+    if (event.key === "Escape" && !elements.historyDetailModal.hidden) {
+      closeHistoryDetails();
+    } else if (event.key === "Escape" && !elements.settingsModal.hidden) {
       closeSettingsModal();
     } else if (event.key === "Escape" && !elements.sizeSettingsModal.hidden) {
       closeSizeSettingsModal();
@@ -371,12 +385,25 @@ function attachEvents() {
   });
 
   elements.historyList.addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest("[data-delete-history-id]");
+    if (deleteButton) {
+      deleteHistoryEntry(deleteButton.dataset.deleteHistoryId);
+      return;
+    }
+    const detailsButton = event.target.closest("[data-history-details-id]");
+    if (detailsButton) {
+      openHistoryDetails(detailsButton.dataset.historyDetailsId, detailsButton);
+      return;
+    }
     const trigger = event.target.closest("[data-history-task-id]");
     if (!trigger) return;
     const taskId = trigger.dataset.historyTaskId;
     if (!taskId) return;
     await refreshHistoryEntry(taskId);
   });
+
+  bindBackdropDismiss(elements.historyDetailModal, closeHistoryDetails);
+  elements.historyDetailModal.addEventListener("click", handleHistoryDetailClick);
 
   elements.resetBtn.addEventListener("click", () => {
     clearStorage();
@@ -989,19 +1016,25 @@ function saveHistoryState() {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(generationHistory));
 }
 
-function addHistoryEntry(taskId, state) {
-  const now = new Date();
+function addHistoryEntry(taskId, state, payload, startedAt = Date.now()) {
+  const now = new Date(startedAt);
   const entry = {
     taskId,
     prompt: state.prompt.trim(),
     mode: detectModeFromAttachments(),
     taskLanguage: state.taskLanguage,
+    requestPayload: payload,
+    startedAt,
     createdAt: now.toISOString(),
     createdLabel: now.toLocaleString("zh-CN"),
     lastStatus: "queued",
     errorMessage: "",
     previewImage: "",
     previewImages: [],
+    imageIds: [],
+    durationMs: 0,
+    completedAt: "",
+    favorite: false,
   };
 
   generationHistory = generationHistory.filter((item) => item.taskId !== taskId);
@@ -1011,19 +1044,27 @@ function addHistoryEntry(taskId, state) {
   renderHistory();
 }
 
-function addErrorHistoryEntry(state, errorMessage) {
+function addErrorHistoryEntry(state, errorMessage, payload, startedAt = Date.now()) {
   const now = new Date();
+  const created = new Date(startedAt);
+  const durationMs = Math.max(0, now.getTime() - startedAt);
   const entry = {
     taskId: `error-${Date.now()}`,
     prompt: state.prompt.trim(),
     mode: detectModeFromAttachments(),
     taskLanguage: state.taskLanguage,
-    createdAt: now.toISOString(),
-    createdLabel: now.toLocaleString("zh-CN"),
+    requestPayload: payload,
+    startedAt,
+    createdAt: created.toISOString(),
+    createdLabel: created.toLocaleString("zh-CN"),
     lastStatus: "error",
     errorMessage: errorMessage || "未知错误",
     previewImage: "",
     previewImages: [],
+    imageIds: [],
+    durationMs,
+    completedAt: now.toISOString(),
+    favorite: false,
   };
 
   generationHistory.unshift(entry);
@@ -1034,14 +1075,23 @@ function addErrorHistoryEntry(state, errorMessage) {
 
 function updateHistoryEntry(taskId, patch) {
   let changed = false;
+  let updatedEntry = null;
   generationHistory = generationHistory.map((item) => {
     if (item.taskId !== taskId) return item;
     changed = true;
-    return { ...item, ...patch };
+    updatedEntry = { ...item, ...patch };
+    return updatedEntry;
   });
   if (changed) {
     saveHistoryState();
     renderHistory();
+    if (
+      historyDetailTaskId === taskId &&
+      !elements.historyDetailModal.hidden &&
+      (updatedEntry.errorMessage || updatedEntry.completedAt || isTaskCompleted(updatedEntry.lastStatus) || isTaskFailed(updatedEntry.lastStatus))
+    ) {
+      renderHistoryDetails(updatedEntry);
+    }
   }
 }
 
@@ -1064,12 +1114,20 @@ function renderHistory() {
       const previewImages = Array.isArray(item.previewImages) && item.previewImages.length
         ? item.previewImages
         : (item.previewImage ? [item.previewImage] : []);
+      const status = item.lastStatus || "unknown";
+      const startedAt = getHistoryStartedAt(item);
+      const isLive = isHistoryElapsedLive(item);
+      const elapsed = getHistoryElapsed(item);
 
       let previewMarkup = `<div class="history-thumb"><div class="history-placeholder">等待生成结果</div></div>`;
       if (previewImages.length >= 1) {
         const firstRemoteUrl = previewImages[0];
         const lightboxSources = previewImages.map((url) => getImageSrc(url)).join("|");
         previewMarkup = `<div class="history-thumb"><img src="${escapeHtml(getImageSrc(firstRemoteUrl))}" alt="历史缩略图" data-lightbox="${escapeHtml(getImageSrc(firstRemoteUrl))}" data-lightbox-sources="${escapeHtml(lightboxSources)}" data-remote-src="${escapeHtml(firstRemoteUrl)}" loading="lazy"></div>`;
+      } else if (item.errorMessage) {
+        previewMarkup = `<div class="history-thumb history-thumb--error"><div class="history-error-preview"><strong>生成失败</strong><p>${escapeHtml(item.errorMessage)}</p></div></div>`;
+      } else if (isTaskCompleted(status)) {
+        previewMarkup = `<div class="history-thumb"><div class="history-placeholder">任务完成，但没有返回图片</div></div>`;
       }
 
       const downloadButtons = previewImages.length
@@ -1080,6 +1138,14 @@ function renderHistory() {
             )
             .join("")}</div>`
         : "";
+      const queryButton = String(item.taskId).startsWith("error-")
+        ? ""
+        : `<button type="button" class="launcher-button launcher-button--compact history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>`;
+      const elapsedMarkup = isLive && startedAt
+        ? `<span data-history-elapsed-start="${startedAt}">${formatDuration(Date.now() - startedAt)}</span> · 进行中`
+        : elapsed === null
+        ? "耗时 —"
+        : `耗时 ${formatDuration(elapsed)}`;
 
       return `
         <article class="history-item">
@@ -1089,15 +1155,17 @@ function renderHistory() {
           <div class="history-item__panel">
             <div class="history-item__text">
               <strong>${escapeHtml(modeLabel)}</strong>
-              ${item.errorMessage ? `<div class="history-error">${escapeHtml(item.errorMessage)}</div>` : ""}
               <div class="history-meta">提示词: ${escapeHtml(item.prompt || "无提示词")}</div>
             </div>
             <div class="history-item__info">
-              <div class="history-meta">${escapeHtml(item.createdLabel || "")} · ${escapeHtml(item.lastStatus || "unknown")}</div>
+              <div class="history-meta">${escapeHtml(item.createdLabel || "")} · <span class="history-status${item.errorMessage ? " history-status--error" : ""}">${escapeHtml(status)}</span></div>
+              <div class="history-meta history-duration">${elapsedMarkup}</div>
               <div class="history-task">${escapeHtml(item.taskId)}</div>
               <div class="history-item__actions">
-                <button type="button" class="launcher-button launcher-button--compact history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>
+                <button type="button" class="launcher-button launcher-button--compact history-action" data-history-details-id="${escapeHtml(item.taskId)}">详情</button>
+                ${queryButton}
                 ${downloadButtons}
+                <button type="button" class="launcher-button launcher-button--compact history-action history-action--delete" data-delete-history-id="${escapeHtml(item.taskId)}" title="只删除本机历史记录，不会取消任务">删除</button>
               </div>
             </div>
           </div>
@@ -1110,12 +1178,294 @@ function renderHistory() {
   elements.historyList.innerHTML = cards;
   upgradeToLocalImages();
 }
+
+function getHistoryStartedAt(item) {
+  const startedAt = Number(item?.startedAt) || Date.parse(item?.createdAt || "");
+  return Number.isFinite(startedAt) ? startedAt : 0;
+}
+
+function isHistoryElapsedLive(item) {
+  if (!item || item.completedAt || item.errorMessage) return false;
+  if (activeTasks.has(item.taskId)) return true;
+  return ["queued", "pending", "processing", "running", "in_progress", "submitted"].includes(String(item.lastStatus || "").toLowerCase());
+}
+
+function getHistoryElapsed(item) {
+  if (Number.isFinite(Number(item?.durationMs))) return Math.max(0, Number(item.durationMs));
+  if (isHistoryElapsedLive(item)) {
+    const startedAt = getHistoryStartedAt(item);
+    return startedAt ? Math.max(0, Date.now() - startedAt) : null;
+  }
+  return null;
+}
+
+function formatDuration(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "—";
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${String(minutes).padStart(2, "0")}:${seconds}`;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:${seconds}`;
+}
+
+function updateHistoryElapsed() {
+  document.querySelectorAll("[data-history-elapsed-start]").forEach((element) => {
+    const startedAt = Number(element.dataset.historyElapsedStart);
+    if (Number.isFinite(startedAt)) element.textContent = formatDuration(Date.now() - startedAt);
+  });
+}
+
+function openHistoryDetails(taskId, opener) {
+  const entry = generationHistory.find((item) => item.taskId === taskId);
+  if (!entry) return;
+  historyDetailTaskId = taskId;
+  historyDetailOpener = opener || null;
+  renderHistoryDetails(entry);
+  elements.historyDetailModal.hidden = false;
+  requestAnimationFrame(() => elements.historyDetailContent.querySelector("[data-close-history-details]")?.focus());
+}
+
+function closeHistoryDetails() {
+  elements.historyDetailModal.hidden = true;
+  historyDetailTaskId = "";
+  const opener = historyDetailOpener;
+  historyDetailOpener = null;
+  opener?.focus();
+}
+
+function renderHistoryDetails(entry) {
+  if (!entry) return;
+  const payload = entry.requestPayload || {};
+  const imageUrls = Array.isArray(entry.previewImages) && entry.previewImages.length
+    ? entry.previewImages
+    : (entry.previewImage ? [entry.previewImage] : []);
+  const imageIds = Array.isArray(entry.imageIds) ? entry.imageIds : [];
+  const startedAt = getHistoryStartedAt(entry);
+  const elapsed = getHistoryElapsed(entry);
+  const live = isHistoryElapsedLive(entry) && startedAt;
+  const size = String(payload.size || "auto");
+  const resolution = payload.resolution ? String(payload.resolution).toUpperCase() : "未指定";
+  const model = getHistoryModelLabel(payload);
+  const createdAt = entry.createdLabel || (startedAt ? new Date(startedAt).toLocaleString("zh-CN") : "未知");
+  const prompt = entry.prompt || payload.prompt || "无提示词";
+  const sourceLabel = entry.mode === "image" ? "图生图" : entry.mode === "multi" ? "多图生图" : "文生图";
+
+  if (imageUrls.length) {
+    const sources = imageUrls.map((url) => getImageSrc(url));
+    elements.historyDetailMedia.innerHTML = `
+      <img class="history-detail__image" src="${escapeHtml(sources[0])}" alt="生成结果" data-lightbox="${escapeHtml(sources[0])}" data-lightbox-sources="${escapeHtml(sources.join("|"))}" data-remote-src="${escapeHtml(imageUrls[0])}">
+      <div class="history-detail__image-meta"><span>${escapeHtml(size)}</span><span>${escapeHtml(resolution)}</span></div>
+      <a class="launcher-button launcher-button--compact history-detail__download" href="/api/download?url=${encodeURIComponent(imageUrls[0])}" download>下载图片</a>
+    `;
+  } else if (entry.errorMessage) {
+    elements.historyDetailMedia.innerHTML = `<div class="history-detail__error" role="alert"><strong>生成失败</strong><p>${escapeHtml(entry.errorMessage)}</p></div>`;
+  } else {
+    elements.historyDetailMedia.innerHTML = `<div class="history-detail__empty">等待生成结果</div>`;
+  }
+
+  const parameterMarkup = [
+    ["来源", `${sourceLabel} · ${model}`],
+    ["尺寸", size],
+    ["分辨率", resolution],
+    ["质量", payload.quality || "自动"],
+    ["复杂度", payload.complexity || "自动"],
+    ["格式", payload.output_format || "默认"],
+    ["背景", payload.background || "默认"],
+    ["数量", payload.n || 1],
+    ["参考图", Array.isArray(payload.image_urls) ? payload.image_urls.length : 0],
+  ].map(([label, value]) => `
+    <div class="history-detail__param"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+  `).join("");
+
+  const durationLabel = live
+    ? `<span data-history-elapsed-start="${startedAt}">${formatDuration(Date.now() - startedAt)}</span> · 进行中`
+    : elapsed === null ? "未知" : formatDuration(elapsed);
+  const imageIdText = imageIds.length ? imageIds.join(", ") : "未返回";
+  const status = entry.lastStatus || "unknown";
+  const canReuse = Boolean(entry.requestPayload);
+
+  elements.historyDetailContent.innerHTML = `
+    <header class="history-detail__header">
+      <div><h2 id="historyDetailTitle">生成详情</h2><span class="history-detail__status${entry.errorMessage ? " history-detail__status--error" : ""}">${escapeHtml(status)}</span></div>
+      <button type="button" class="btn--icon" data-close-history-details aria-label="关闭">×</button>
+    </header>
+    <section class="history-detail__prompt">
+      <div class="history-detail__section-head"><h3>输入内容</h3><button type="button" class="launcher-button launcher-button--compact" data-copy-history-field="prompt">复制</button></div>
+      <p>${escapeHtml(prompt)}</p>
+    </section>
+    ${entry.errorMessage ? `<p class="history-detail__error-note">${escapeHtml(entry.errorMessage)}</p>` : ""}
+    <section class="history-detail__parameters">
+      <h3>参数配置</h3>
+      <div class="history-detail__parameter-grid">${parameterMarkup}</div>
+    </section>
+    <section class="history-detail__timestamps">
+      <p>创建于 ${escapeHtml(createdAt)}</p>
+      <p>总耗时 ${durationLabel}</p>
+    </section>
+    <section class="history-detail__identifiers">
+      <div><span>任务 ID</span><code>${escapeHtml(entry.taskId)}</code><button type="button" class="launcher-button launcher-button--compact" data-copy-history-field="task">复制</button></div>
+      <div><span>图片 ID</span><code>${escapeHtml(imageIdText)}</code>${imageIds.length ? `<button type="button" class="launcher-button launcher-button--compact" data-copy-history-field="images">复制</button>` : ""}</div>
+    </section>
+    <footer class="history-detail__actions">
+      <button type="button" class="launcher-button" data-reuse-history-config="${escapeHtml(entry.taskId)}" ${canReuse ? "" : "disabled"}>复用配置</button>
+      <button type="button" class="launcher-button" data-edit-history-output="${escapeHtml(entry.taskId)}" ${canReuse ? "" : "disabled"}>编辑输出</button>
+      <button type="button" class="launcher-button launcher-button--danger" data-delete-history-id="${escapeHtml(entry.taskId)}" title="只删除本机历史记录，不会取消任务">删除历史</button>
+      <button type="button" class="launcher-button history-detail__favorite" data-toggle-history-favorite="${escapeHtml(entry.taskId)}" aria-pressed="${Boolean(entry.favorite)}">${entry.favorite ? "已收藏" : "收藏"}</button>
+    </footer>
+  `;
+}
+
+function getHistoryModelLabel(payload) {
+  if (!payload.model) return "未知模型";
+  if (payload.model === "gpt-image-2.6-ext") {
+    return `GPT Image 2.6 Ext · ${payload.version || "flare"}`;
+  }
+  return payload.model.replace("gpt-image-2.6-", "GPT Image 2.6 ");
+}
+
+async function handleHistoryDetailClick(event) {
+  const closeButton = event.target.closest("[data-close-history-details]");
+  if (closeButton) {
+    closeHistoryDetails();
+    return;
+  }
+
+  const copyButton = event.target.closest("[data-copy-history-field]");
+  if (copyButton) {
+    const entry = generationHistory.find((item) => item.taskId === historyDetailTaskId);
+    if (!entry) return;
+    const field = copyButton.dataset.copyHistoryField;
+    const value = field === "prompt"
+      ? entry.prompt
+      : field === "images"
+      ? (entry.imageIds || []).join(", ")
+      : entry.taskId;
+    await copyHistoryValue(value || "");
+    return;
+  }
+
+  const favoriteButton = event.target.closest("[data-toggle-history-favorite]");
+  if (favoriteButton) {
+    const taskId = favoriteButton.dataset.toggleHistoryFavorite;
+    const entry = generationHistory.find((item) => item.taskId === taskId);
+    if (!entry) return;
+    updateHistoryEntry(taskId, { favorite: !entry.favorite });
+    renderHistoryDetails(generationHistory.find((item) => item.taskId === taskId));
+    return;
+  }
+
+  const reuseButton = event.target.closest("[data-reuse-history-config]");
+  if (reuseButton) {
+    const entry = generationHistory.find((item) => item.taskId === reuseButton.dataset.reuseHistoryConfig);
+    closeHistoryDetails();
+    if (entry) applyHistoryConfiguration(entry, false);
+    return;
+  }
+
+  const editOutputButton = event.target.closest("[data-edit-history-output]");
+  if (editOutputButton) {
+    const entry = generationHistory.find((item) => item.taskId === editOutputButton.dataset.editHistoryOutput);
+    closeHistoryDetails();
+    if (entry) applyHistoryConfiguration(entry, true);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-delete-history-id]");
+  if (deleteButton) deleteHistoryEntry(deleteButton.dataset.deleteHistoryId);
+}
+
+async function copyHistoryValue(value) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = value;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.append(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    setStatus("已复制到剪贴板。", "success");
+  } catch {
+    setStatus("复制失败，请手动选择内容。", "warning");
+  }
+}
+
+function applyHistoryConfiguration(entry, focusOutput) {
+  const payload = entry.requestPayload;
+  if (!payload) return;
+
+  const version = payload.version === "sunburst" ? "sunburst" : "flare";
+  elements.modelVariant.value = payload.model === "gpt-image-2.6-ext"
+    ? `gpt-image-2.6-ext-${version}`
+    : payload.model || DEFAULTS.modelVariant;
+  elements.prompt.value = payload.prompt || entry.prompt || "";
+
+  const customSize = String(payload.size || "").match(/^(\d+)x(\d+)$/i);
+  if (customSize) {
+    elements.sizeMode.value = "custom";
+    elements.customWidth.value = customSize[1];
+    elements.customHeight.value = customSize[2];
+  } else if (payload.size && payload.size !== "auto") {
+    elements.sizeMode.value = "ratio";
+    elements.aspectRatio.value = payload.size;
+  } else {
+    elements.sizeMode.value = "auto";
+    elements.aspectRatio.value = "auto";
+  }
+
+  elements.resolution.value = payload.resolution || "1k";
+  elements.outputFormat.value = payload.output_format || "";
+  elements.quality.value = payload.quality || "";
+  elements.complexity.value = payload.complexity || "";
+  elements.imageCount.value = String(payload.n || 1);
+  elements.background.value = payload.background || "";
+
+  attachmentItems.forEach(revokeAttachmentPreview);
+  attachmentItems = (Array.isArray(payload.image_urls) ? payload.image_urls : []).slice(0, MAX_REFERENCE_IMAGES).map((url, index) => {
+    attachmentCounter += 1;
+    return {
+      id: `history-reference-${attachmentCounter}`,
+      file: new File([], `reference-${index + 1}.png`, { type: "image/png" }),
+      previewUrl: getImageSrc(url),
+      status: "success",
+      uploadedUrl: url,
+      errorMessage: "",
+    };
+  });
+
+  syncModelControls();
+  syncModeBadge();
+  renderAttachmentTray();
+  persistForm();
+  elements.prompt.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (focusOutput) {
+    requestAnimationFrame(() => openSelectPicker(elements.outputFormat._pickerInstance, false));
+  } else {
+    elements.prompt.focus({ preventScroll: true });
+  }
+}
+
+function deleteHistoryEntry(taskId) {
+  if (!generationHistory.some((item) => item.taskId === taskId)) return;
+  if (historyDetailTaskId === taskId) closeHistoryDetails();
+  generationHistory = generationHistory.filter((item) => item.taskId !== taskId);
+  saveHistoryState();
+  renderHistory();
+  pruneOrphanedImages();
+  setStatus("已删除本机历史记录。", "idle");
+}
 async function handleSubmit(event) {
   event.preventDefault();
   persistForm();
 
   let state;
   let payload;
+  let submissionStartedAt = 0;
+  let errorHistoryCreated = false;
 
   try {
     ensureAttachmentsReady();
@@ -1133,6 +1483,7 @@ async function handleSubmit(event) {
   renderRawResult(null);
 
   try {
+    submissionStartedAt = Date.now();
     const response = await fetch("/api/generate", {
       method: "POST",
       headers: {
@@ -1149,7 +1500,8 @@ async function handleSubmit(event) {
 
     if (!response.ok) {
       const errMsg = result?.error?.message || result?.message || "任务提交失败";
-      addErrorHistoryEntry(state, errMsg);
+      addErrorHistoryEntry(state, errMsg, payload, submissionStartedAt);
+      errorHistoryCreated = true;
       throw new Error(errMsg);
     }
 
@@ -1162,19 +1514,23 @@ async function handleSubmit(event) {
 
     if (!taskId) {
       const errMsg = "响应中未找到 task_id";
-      addErrorHistoryEntry(state, errMsg);
+      addErrorHistoryEntry(state, errMsg, payload, submissionStartedAt);
+      errorHistoryCreated = true;
       throw new Error(errMsg);
     }
 
-    addHistoryEntry(taskId, state);
+    addHistoryEntry(taskId, state, payload, submissionStartedAt);
     elements.taskBadge.textContent = `${taskId} (等 ${activeTasks.size + 1} 个)`;
     setStatus(`任务已提交，正在轮询 ${taskId} ...`, "queued");
 
-    pollTask(state, taskId).catch((error) => {
-      updateHistoryEntry(taskId, { lastStatus: "error", errorMessage: error.message || "轮询失败" });
+    pollTask(state, taskId, { startedAt: submissionStartedAt }).catch((error) => {
+      markHistoryFailed(taskId, error.message || "轮询失败");
       setStatus(error.message || "轮询失败", "error");
     });
   } catch (error) {
+    if (submissionStartedAt && state && payload && !errorHistoryCreated) {
+      addErrorHistoryEntry(state, error.message || "请求失败", payload, submissionStartedAt);
+    }
     setStatus(error.message || "请求失败", "error");
   }
 }
@@ -1251,6 +1607,7 @@ function validateResolution(state, isExt) {
 
 async function refreshHistoryEntry(taskId) {
   const historyEntry = generationHistory.find((item) => item.taskId === taskId);
+  if (!historyEntry) return;
   const state = collectFormState();
   const refreshState = {
     ...state,
@@ -1261,7 +1618,9 @@ async function refreshHistoryEntry(taskId) {
   elements.taskBadge.textContent = `${taskId} (等 ${activeTasks.size + 1} 个)`;
   setStatus(`正在重新查询任务 ${taskId} ...`, "queued");
 
-  pollTask(refreshState, taskId, { skipInitialDelay: true }).catch((error) => {
+  updateHistoryEntry(taskId, { lastStatus: "queued", errorMessage: "", completedAt: "" });
+  pollTask(refreshState, taskId, { skipInitialDelay: true, startedAt: getHistoryStartedAt(historyEntry) }).catch((error) => {
+    markHistoryFailed(taskId, error.message || "查询失败");
     setStatus(error.message || "查询失败", "error");
   });
 }
@@ -1271,7 +1630,8 @@ async function pollTask(state, taskId, options = {}) {
   const interval = Number(state.pollInterval) || 3000;
   const initialDelay = options.skipInitialDelay ? 0 : Number(state.initialPollDelay) || 0;
   const timeout = Number(state.pollTimeout) || 120000;
-  const startedAt = Date.now();
+  const pollStartedAt = Date.now();
+  const generationStartedAt = Number(options.startedAt) || pollStartedAt;
 
   const abortController = new AbortController();
   activeTasks.set(taskId, { abortController });
@@ -1285,7 +1645,7 @@ async function pollTask(state, taskId, options = {}) {
     let pollCount = 0;
     let taskImages = [];
 
-    while (Date.now() - startedAt < timeout) {
+    while (Date.now() - pollStartedAt < timeout) {
       if (abortController.signal.aborted) return;
 
       pollCount += 1;
@@ -1297,47 +1657,78 @@ async function pollTask(state, taskId, options = {}) {
       renderRawResult(result);
 
       if (!response.ok) {
-        updateHistoryEntry(taskId, { lastStatus: "error" });
         throw new Error(result?.error?.message || result?.message || "任务状态查询失败");
       }
 
       const status = extractTaskStatus(result);
-      updateHistoryEntry(taskId, { lastStatus: status });
+      updateHistoryEntry(taskId, { lastStatus: status, durationMs: Math.max(0, Date.now() - generationStartedAt) });
       setStatus(`[${taskId}] 第 ${pollCount} 次轮询 — ${buildStatusMessage(result, status)}`, status);
 
       const imageUrls = extractImageUrls(result);
       if (imageUrls.length) {
         taskImages = imageUrls;
-        updateHistoryEntry(taskId, {
+        const imagePatch = {
           previewImage: imageUrls[0] || "",
           previewImages: imageUrls,
-        });
+        };
+        const imageIds = extractImageIds(result);
+        if (imageIds.length) imagePatch.imageIds = imageIds;
+        updateHistoryEntry(taskId, imagePatch);
         for (const url of imageUrls) cacheRemoteImage(url);
       }
 
       if (isTaskCompleted(status)) {
+        const completedAt = Date.now();
         if (!taskImages.length) {
-          setStatus("任务已完成，但未识别到图片地址，请检查原始响应。", "warning");
+          const message = "任务已完成，但未识别到图片地址，请检查原始响应。";
+          updateHistoryEntry(taskId, {
+            lastStatus: status,
+            errorMessage: message,
+            completedAt: new Date(completedAt).toISOString(),
+            durationMs: Math.max(0, completedAt - generationStartedAt),
+          });
+          setStatus(message, "warning");
         } else {
+          updateHistoryEntry(taskId, {
+            lastStatus: status,
+            errorMessage: "",
+            completedAt: new Date(completedAt).toISOString(),
+            durationMs: Math.max(0, completedAt - generationStartedAt),
+          });
           setStatus(`任务 ${taskId} 已完成，共获得 ${taskImages.length} 张图片。`, "success");
         }
         return;
       }
 
       if (isTaskFailed(status)) {
-        updateHistoryEntry(taskId, { lastStatus: status });
-        throw new Error(extractFailureMessage(result) || `任务失败：${status}`);
+        const message = extractFailureMessage(result) || `任务失败：${status}`;
+        markHistoryFailed(taskId, message, status);
+        throw new Error(message);
       }
 
       await wait(interval, abortController.signal);
     }
 
-    updateHistoryEntry(taskId, { lastStatus: "timeout" });
-    throw new Error("轮询超时，请稍后再试。");
+    const message = "轮询超时，请稍后再试。";
+    markHistoryFailed(taskId, message, "timeout");
+    throw new Error(message);
   } finally {
     activeTasks.delete(taskId);
     syncGlobalStatus();
   }
+}
+
+function markHistoryFailed(taskId, errorMessage, status = "error") {
+  const entry = generationHistory.find((item) => item.taskId === taskId);
+  if (!entry) return;
+  const completedAt = Date.now();
+  const startedAt = getHistoryStartedAt(entry) || completedAt;
+  updateHistoryEntry(taskId, {
+    lastStatus: status,
+    errorMessage: errorMessage || "未知错误",
+    completedAt: new Date(completedAt).toISOString(),
+    durationMs: Math.max(0, completedAt - startedAt),
+  });
 }
 
 async function handlePromptPaste(event) {
@@ -1671,6 +2062,7 @@ function clearHistory() {
   generationHistory = [];
   saveHistoryState();
   renderHistory();
+  pruneOrphanedImages();
   closeClearHistoryModal();
   setStatus("历史记录已清空。", "idle");
 }
@@ -1724,6 +2116,27 @@ function extractImageUrls(result) {
   }
 
   return [...urls];
+}
+
+function extractImageIds(result) {
+  const ids = new Set();
+  const candidates = [
+    result.data?.result?.images,
+    result.data?.images,
+    result.images,
+    result.data?.result?.files,
+    result.data?.files,
+    result.result?.files,
+    result.files,
+  ];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const image of candidate) {
+      const id = image?.image_id || image?.id || image?.asset_id;
+      if (id) ids.add(String(id));
+    }
+  }
+  return [...ids];
 }
 
 function extractFailureMessage(result) {

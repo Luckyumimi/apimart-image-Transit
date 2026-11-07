@@ -127,7 +127,7 @@ async function handleBalance(req, res) {
     return;
   }
 
-  const upstream = await fetch(`${FIXED_BASE_URL}/v1/balance`, {
+  const upstream = await fetch(`${FIXED_BASE_URL}/v1/user/balance`, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },

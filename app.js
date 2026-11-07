@@ -800,18 +800,32 @@ async function refreshApiBalance() {
     }
 
     if (requestId !== balanceRequestId) return;
-    if (balance?.unlimited_quota) {
-      elements.apiBalanceStatus.textContent = "余额：无限额度";
+    const format = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 6 }).format(value);
+    const readAmount = (value) => {
+      if (value == null || (typeof value === "string" && !value.trim())) return null;
+      const amount = Number(value);
+      return Number.isFinite(amount) ? amount : null;
+    };
+    const remainBalance = readAmount(balance?.remain_balance);
+    const remainCredits = readAmount(balance?.remain_credits);
+    const usedBalance = readAmount(balance?.used_balance);
+    const usedCredits = readAmount(balance?.used_credits);
+    const balanceCurrency = typeof balance?.currency === "string" ? balance.currency.trim() : "";
+    const unlimitedValue = balance?.unlimited_quota;
+    const hasUnlimitedQuota = unlimitedValue === true
+      || (typeof unlimitedValue === "string" && unlimitedValue.trim().toLowerCase() === "true");
+    const parts = [];
+
+    if (hasUnlimitedQuota) {
+      parts.push("Key 额度：无限");
     } else {
-      const format = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(Number(value));
-      const parts = [];
-      const remainBalance = balance?.remain_balance == null || balance.remain_balance === "" ? NaN : Number(balance.remain_balance);
-      const remainCredits = balance?.remain_credits == null || balance.remain_credits === "" ? NaN : Number(balance.remain_credits);
-      if (Number.isFinite(remainBalance)) parts.push(format(remainBalance));
-      if (Number.isFinite(remainCredits)) parts.push(`${format(remainCredits)} Credits`);
-      if (!parts.length) throw new Error("余额响应中没有余额字段");
-      elements.apiBalanceStatus.textContent = `余额：${parts.join(" · ")}`;
+      if (remainBalance !== null) parts.push(`剩余余额：${format(remainBalance)}`);
+      if (remainCredits !== null) parts.push(`剩余积分：${format(remainCredits)} Credits`);
     }
+    if (usedBalance !== null) parts.push(`已用余额：${format(usedBalance)}${balanceCurrency ? ` ${balanceCurrency}` : ""}`);
+    if (usedCredits !== null) parts.push(`已用积分：${format(usedCredits)} Credits`);
+    if (!parts.length) throw new Error("余额响应中没有余额字段");
+    elements.apiBalanceStatus.textContent = parts.join(" · ");
     elements.apiBalanceStatus.dataset.state = "success";
   } catch (error) {
     if (requestId !== balanceRequestId) return;

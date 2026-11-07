@@ -2,6 +2,8 @@ const STORAGE_KEY = "apimart-image-bridge";
 const HISTORY_KEY = "apimart-image-bridge-history";
 const FIXED_BASE_URL = "https://api.apimart.ai";
 const MAX_HISTORY_ITEMS = 20;
+const MAX_REFERENCE_IMAGES = 16;
+const EXT_IMAGE_RATIOS = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"];
 const IDB_NAME = "apimart-image-store";
 const IDB_STORE = "images";
 const IDB_VERSION = 1;
@@ -154,7 +156,7 @@ async function loadBlobCache() {
 }
 
 const DEFAULTS = {
-  modelVariant: "gpt-image-2.6-flare",
+  modelVariant: "gpt-image-2.6-ext-flare",
   aspectRatio: "auto",
   resolution: "1k",
   outputFormat: "",
@@ -176,14 +178,18 @@ const elements = {
   apiKey: document.getElementById("apiKey"),
   fixedBaseUrl: document.getElementById("fixedBaseUrl"),
   modelVariant: document.getElementById("modelVariant"),
+  modelBillingHint: document.getElementById("modelBillingHint"),
   aspectRatio: document.getElementById("aspectRatio"),
+  fixedGifRatio: document.getElementById("fixedGifRatio"),
   resolution: document.getElementById("resolution"),
+  fixedExtResolution: document.getElementById("fixedExtResolution"),
   outputFormat: document.getElementById("outputFormat"),
   quality: document.getElementById("quality"),
   complexity: document.getElementById("complexity"),
   imageCount: document.getElementById("imageCount"),
   prompt: document.getElementById("prompt"),
   background: document.getElementById("background"),
+  backgroundControl: document.getElementById("backgroundCtrl"),
   taskLanguage: document.getElementById("taskLanguage"),
   pollInterval: document.getElementById("pollInterval"),
   initialPollDelay: document.getElementById("initialPollDelay"),
@@ -191,6 +197,7 @@ const elements = {
   referenceUploadInput: document.getElementById("referenceUploadInput"),
   uploadReferenceBtn: document.getElementById("uploadReferenceBtn"),
   attachmentTray: document.getElementById("attachmentTray"),
+  referenceHint: document.getElementById("referenceHint"),
   submitBtn: document.querySelector('#imageForm button[type="submit"]'),
   resetBtn: document.getElementById("resetBtn"),
   statusText: document.getElementById("statusText"),
@@ -223,14 +230,22 @@ let attachmentCounter = 0;
 let lightboxItems = [];
 let lightboxIndex = 0;
 let activeSelectPicker = null;
+let lastFlexibleResolution = null;
+let lastFlexibleAspectRatio = null;
+let lastFlexibleImageCount = null;
+let previousControlMode = null;
 
 init();
 
 function init() {
   const savedState = getSavedState();
+  if (savedState?.modelVariant === "gpt-image-2.6-flare") {
+    savedState.modelVariant = DEFAULTS.modelVariant;
+  }
   generationHistory = getHistoryState();
   hydrateForm(savedState);
   enhanceSelects();
+  syncModelControls();
   syncModeBadge();
   loadBlobCache().then(() => {
     renderHistory();
@@ -260,6 +275,11 @@ function attachEvents() {
 
   elements.form.addEventListener("input", persistForm);
   elements.form.addEventListener("change", persistForm);
+  elements.modelVariant.addEventListener("change", syncModelControls);
+  elements.outputFormat.addEventListener("change", syncModelControls);
+  elements.aspectRatio.addEventListener("change", () => {
+    if (elements.outputFormat.value !== "gif") lastFlexibleAspectRatio = elements.aspectRatio.value;
+  });
   elements.form.addEventListener("submit", handleSubmit);
   elements.prompt.addEventListener("paste", handlePromptPaste);
   elements.referenceUploadInput.addEventListener("change", handleReferenceUpload);
@@ -468,6 +488,122 @@ function syncSelectPicker(instance) {
   instance.options.querySelectorAll("[role='option']").forEach((item) => {
     item.setAttribute("aria-selected", String(item.dataset.value === instance.select.value));
   });
+}
+
+function setSelectOptionsDisabled(select, disabledValues) {
+  [...select.options].forEach((option) => {
+    const disabled = disabledValues.has(option.value);
+    option.disabled = disabled;
+    const pickerItem = select._pickerInstance?.options.querySelector(`[data-value="${option.value}"]`);
+    if (pickerItem) {
+      pickerItem.disabled = disabled;
+      pickerItem.setAttribute("aria-disabled", String(disabled));
+    }
+  });
+}
+
+function syncModelControls() {
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  const outputFormat = elements.outputFormat.value;
+  const hasReferences = attachmentItems.length > 0;
+  const isGif = outputFormat === "gif";
+  const isSvg = outputFormat === "svg";
+  const requiresSingleImage = isExt || isSvg;
+
+  if (!previousControlMode) {
+    lastFlexibleResolution = elements.resolution.value || "1k";
+    lastFlexibleAspectRatio = elements.aspectRatio.value || "auto";
+    lastFlexibleImageCount = elements.imageCount.value || "1";
+  } else {
+    if (previousControlMode.isExt && !isExt) {
+      elements.resolution.value = lastFlexibleResolution || "1k";
+    } else if (!previousControlMode.isExt && isExt) {
+      lastFlexibleResolution = elements.resolution.value || "1k";
+    } else if (!isExt) {
+      lastFlexibleResolution = elements.resolution.value || "1k";
+    }
+
+    if (previousControlMode.isGif && !isGif) {
+      elements.aspectRatio.value = lastFlexibleAspectRatio || "auto";
+    } else if (!previousControlMode.isGif && isGif) {
+      lastFlexibleAspectRatio = elements.aspectRatio.value || "auto";
+    } else if (previousControlMode.isExt && !isExt) {
+      elements.aspectRatio.value = lastFlexibleAspectRatio || "auto";
+    } else if (!isGif && !isExt) {
+      lastFlexibleAspectRatio = elements.aspectRatio.value || "auto";
+    }
+
+    if (previousControlMode.requiresSingleImage && !requiresSingleImage) {
+      elements.imageCount.value = lastFlexibleImageCount || "1";
+    } else if (!previousControlMode.requiresSingleImage && requiresSingleImage) {
+      lastFlexibleImageCount = elements.imageCount.value || "1";
+    } else if (!requiresSingleImage) {
+      lastFlexibleImageCount = elements.imageCount.value || "1";
+    }
+  }
+
+  const disabledRatios = new Set();
+  [...elements.aspectRatio.options].forEach((option) => {
+    const allowed = isGif
+      ? option.value === "auto"
+      : !isExt || EXT_IMAGE_RATIOS.includes(option.value);
+    if (!allowed) disabledRatios.add(option.value);
+  });
+  setSelectOptionsDisabled(elements.aspectRatio, disabledRatios);
+  if (isGif) {
+    elements.aspectRatio.value = "auto";
+  } else if (disabledRatios.has(elements.aspectRatio.value)) {
+    elements.aspectRatio.value = "auto";
+  }
+  elements.aspectRatio._pickerInstance.picker.hidden = isGif;
+  elements.fixedGifRatio.hidden = !isGif;
+
+  if (isExt) elements.resolution.value = "1k";
+  elements.resolution._pickerInstance.picker.hidden = isExt;
+  elements.fixedExtResolution.hidden = !isExt;
+
+  elements.imageCount.disabled = requiresSingleImage;
+  elements.imageCount.min = "1";
+  elements.imageCount.max = requiresSingleImage ? "1" : "4";
+  if (requiresSingleImage) elements.imageCount.value = "1";
+  else {
+    const count = Number(elements.imageCount.value);
+    if (!Number.isFinite(count) || count < 1) elements.imageCount.value = "1";
+    else if (count > 4) elements.imageCount.value = "4";
+  }
+
+  const disabledFormats = new Set();
+  if (hasReferences) {
+    disabledFormats.add("svg");
+    if (isExt) disabledFormats.add("gif");
+  }
+  setSelectOptionsDisabled(elements.outputFormat, disabledFormats);
+
+  const disabledBackgrounds = elements.outputFormat.value === "jpeg"
+    ? new Set(["transparent"])
+    : new Set();
+  setSelectOptionsDisabled(elements.background, disabledBackgrounds);
+  if (disabledBackgrounds.has(elements.background.value)) elements.background.value = "";
+  elements.backgroundControl.hidden = isExt || isGif || isSvg;
+  elements.modelBillingHint.textContent = isExt
+    ? "按张固定价 · 当前仅开放 1K、单张；单价由版本和分辨率决定，质量档位不另收费。"
+    : `按图片 Token 用量计费；自动质量按 max 档预留，最终按实际档位结算${isSvg ? "；SVG 还会产生文本模型 Token 用量。" : "。需要固定单价时，请选择 Ext Flare 或 Ext Sunburst。"}`;
+  elements.modelBillingHint.dataset.billing = isExt ? "fixed" : "usage";
+
+  const textOnlyFormat = isSvg || (isExt && isGif);
+  elements.uploadReferenceBtn.disabled = textOnlyFormat;
+  elements.referenceUploadInput.disabled = textOnlyFormat;
+  elements.referenceHint.textContent = hasReferences && (isSvg || (isExt && isGif))
+    ? "当前参考图与输出格式不兼容，请改用 PNG、JPEG、WebP 或移除参考图。"
+    : textOnlyFormat
+    ? isSvg
+      ? "SVG 仅支持文生图，参考图上传和粘贴已暂停。"
+      : "GIF 仅支持文生图，参考图上传和粘贴已暂停。"
+    : "最多 16 张参考图，按添加顺序用于图生图。";
+
+  previousControlMode = { isExt, isGif, requiresSingleImage };
+  syncSelectPickers();
+  syncSubmitAvailability();
 }
 
 function openSelectPicker(instance, fromEnd) {
@@ -799,7 +935,9 @@ function buildPayload(state) {
 
   if (state.quality) payload.quality = state.quality;
   if (state.complexity) payload.complexity = state.complexity;
-  if (state.background) payload.background = state.background;
+  if (state.background && !isExt && !["gif", "svg"].includes(state.outputFormat)) {
+    payload.background = state.background;
+  }
   if (state.outputFormat) payload.output_format = state.outputFormat;
 
   if (isExt) {
@@ -814,8 +952,7 @@ function buildPayload(state) {
 }
 
 function validateResolution(state, isExt) {
-  const extRatios = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"];
-  if (isExt && !extRatios.includes(state.aspectRatio)) {
+  if (isExt && !EXT_IMAGE_RATIOS.includes(state.aspectRatio)) {
     throw new Error("2.6 Ext 不支持当前比例，请选择自动或文档列出的 1K 比例。");
   }
   if (isExt && state.resolution !== "1k") {
@@ -957,6 +1094,13 @@ async function handleReferenceUpload(event) {
 }
 
 async function queueAttachments(files) {
+  const format = elements.outputFormat.value;
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  if (format === "svg" || (isExt && format === "gif")) {
+    setStatus("当前格式仅支持文生图，请先切换为 PNG、JPEG 或 WebP 后再添加参考图。", "warning");
+    return;
+  }
+
   const apiKey = elements.apiKey.value.trim();
   if (!apiKey) {
     setStatus("请先填写 API Key，再上传参考图。", "warning");
@@ -964,7 +1108,14 @@ async function queueAttachments(files) {
     return;
   }
 
-  const items = files.map((file) => createAttachmentItem(file));
+  const availableSlots = MAX_REFERENCE_IMAGES - attachmentItems.length;
+  if (availableSlots <= 0) {
+    setStatus(`最多添加 ${MAX_REFERENCE_IMAGES} 张参考图，请先移除已有图片。`, "warning");
+    return;
+  }
+  const acceptedFiles = files.slice(0, availableSlots);
+  const ignoredCount = files.length - acceptedFiles.length;
+  const items = acceptedFiles.map((file) => createAttachmentItem(file));
   attachmentItems.push(...items);
   syncModeBadge();
   renderAttachmentTray();
@@ -972,6 +1123,9 @@ async function queueAttachments(files) {
 
   for (const item of items) {
     await uploadAttachmentItem(item, apiKey);
+  }
+  if (ignoredCount > 0) {
+    setStatus(`最多添加 ${MAX_REFERENCE_IMAGES} 张参考图，超出的 ${ignoredCount} 张未添加。`, "warning");
   }
 }
 
@@ -1028,6 +1182,7 @@ function revokeAttachmentPreview(item) {
 }
 
 function renderAttachmentTray() {
+  syncModelControls();
   if (!attachmentItems.length) {
     elements.attachmentTray.hidden = true;
     elements.attachmentTray.innerHTML = "";
@@ -1283,7 +1438,12 @@ function renderRawResult(result) {
 function syncSubmitAvailability() {
   if (!elements.submitBtn) return;
   const hasUploadingAttachments = attachmentItems.some((item) => item.status === "uploading");
-  elements.submitBtn.disabled = hasUploadingAttachments;
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  const incompatibleReferences = attachmentItems.length > 0 && (
+    elements.outputFormat.value === "svg" ||
+    (isExt && elements.outputFormat.value === "gif")
+  );
+  elements.submitBtn.disabled = hasUploadingAttachments || incompatibleReferences;
 }
 
 function setStatus(message, state) {

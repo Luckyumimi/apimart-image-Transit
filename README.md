@@ -8,6 +8,7 @@
 - `app.js`：浏览器界面、尺寸设置、历史记录和参考图处理
 - `image-contract.js`：浏览器与 CLI 共用的精确尺寸限制
 - `cli.js`：通过本站代理路由生成、轮询和下载
+- `.agents/skills/cliapi/SKILL.md`：CLI 与网站 HTTP API 的调用说明
 - `test/cli.test.js`：不访问 APIMart 的 CLI 模拟路由测试
 - `index.html`、`styles.css`：页面结构和样式
 

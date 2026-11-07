@@ -160,6 +160,17 @@
             <button type="submit" class="launcher-button launcher-button--primary">开始生成</button>
             <button id="resetBtn" type="button" class="launcher-button">重置</button>
           </div>
+          <div class="generation-billing">
+            <div class="generation-billing__estimate">
+              <span>预计消耗</span>
+              <strong id="generationEstimate">按实际 Token 用量结算</strong>
+              <a href="https://apimart.ai/zh/pricing" target="_blank" rel="noopener noreferrer">价格表</a>
+            </div>
+            <div class="generation-billing__balance">
+              <span id="apiBalanceStatus" aria-live="polite">填写并保存 API Key 后查询余额</span>
+              <button id="refreshBalanceBtn" type="button" class="launcher-button launcher-button--compact" disabled>刷新</button>
+            </div>
+          </div>
         </form>
       </div>
     </section>

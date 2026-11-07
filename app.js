@@ -178,6 +178,12 @@ const DEFAULTS = {
   pollTimeout: "120000",
 };
 
+const EXT_PRICE_RANGES_CREDITS = {
+  "1k": { min: 0.0765, max: 0.1063 },
+  "2k": { min: 0.27, max: 0.375 },
+  "4k": { min: 0.36, max: 0.5 },
+};
+
 const elements = {
   form: document.getElementById("imageForm"),
   openSettingsBtn: document.getElementById("openSettingsBtn"),
@@ -228,6 +234,9 @@ const elements = {
   uploadReferenceBtn: document.getElementById("uploadReferenceBtn"),
   attachmentTray: document.getElementById("attachmentTray"),
   referenceHint: document.getElementById("referenceHint"),
+  generationEstimate: document.getElementById("generationEstimate"),
+  apiBalanceStatus: document.getElementById("apiBalanceStatus"),
+  refreshBalanceBtn: document.getElementById("refreshBalanceBtn"),
   submitBtn: document.querySelector('#imageForm button[type="submit"]'),
   resetBtn: document.getElementById("resetBtn"),
   statusText: document.getElementById("statusText"),
@@ -277,6 +286,7 @@ let sizePreviewObserver = null;
 let historyDetailTaskId = "";
 let historyDetailOpener = null;
 let fileDragDepth = 0;
+let balanceRequestId = 0;
 
 init();
 
@@ -306,6 +316,8 @@ function init() {
   window.setInterval(updateHistoryElapsed, 1000);
   pruneOrphanedImages();
   cacheAllHistoryImages();
+  elements.refreshBalanceBtn.disabled = !elements.apiKey.value.trim();
+  if (elements.apiKey.value.trim()) refreshApiBalance();
 }
 
 function attachEvents() {
@@ -317,7 +329,17 @@ function attachEvents() {
   elements.saveSettingsBtn.addEventListener("click", () => {
     persistForm();
     closeSettingsModal();
+    refreshApiBalance();
   });
+  elements.apiKey.addEventListener("input", () => {
+    balanceRequestId += 1;
+    elements.apiBalanceStatus.removeAttribute("data-state");
+    elements.apiBalanceStatus.textContent = elements.apiKey.value.trim()
+      ? "保存 Key 后刷新余额"
+      : "填写并保存 API Key 后查询余额";
+    elements.refreshBalanceBtn.disabled = !elements.apiKey.value.trim();
+  });
+  elements.refreshBalanceBtn.addEventListener("click", refreshApiBalance);
   bindBackdropDismiss(elements.settingsModal, closeSettingsModal);
   elements.openSizeSettingsBtn.addEventListener("click", openSizeSettingsModal);
   elements.closeSizeSettingsBtn.addEventListener("click", closeSizeSettingsModal);
@@ -346,8 +368,14 @@ function attachEvents() {
     }
   });
 
-  elements.form.addEventListener("input", persistForm);
-  elements.form.addEventListener("change", persistForm);
+  elements.form.addEventListener("input", () => {
+    persistForm();
+    updateGenerationEstimate();
+  });
+  elements.form.addEventListener("change", () => {
+    persistForm();
+    updateGenerationEstimate();
+  });
   elements.modelVariant.addEventListener("change", syncModelControls);
   elements.outputFormat.addEventListener("change", syncModelControls);
   elements.aspectRatio.addEventListener("change", () => {
@@ -705,7 +733,7 @@ function syncModelControls() {
   if (disabledBackgrounds.has(elements.background.value)) elements.background.value = "";
   elements.backgroundControl.hidden = isExt || isGif || isSvg;
   elements.modelBillingHint.textContent = isExt
-    ? "按张固定价 · 当前仅开放 1K、单张；单价由版本和分辨率决定，质量档位不另收费。"
+    ? "按张固定价 · 当前仅开放 1K、单张；Flare / Sunburst 公开价相同，质量档位不另收费。"
     : `按图片 Token 用量计费；自动质量按 max 档预留，最终按实际档位结算${isSvg ? "；SVG 还会产生文本模型 Token 用量。" : "。需要固定单价时，请选择 Ext Flare 或 Ext Sunburst。"}`;
   elements.modelBillingHint.dataset.billing = isExt ? "fixed" : "usage";
 
@@ -723,7 +751,77 @@ function syncModelControls() {
   previousControlMode = { isExt, isGif, requiresSingleImage };
   syncSizeSummary();
   syncSelectPickers();
+  updateGenerationEstimate();
   syncSubmitAvailability();
+}
+
+function updateGenerationEstimate() {
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  if (!isExt) {
+    elements.generationEstimate.textContent = "按实际 Token 用量结算，提交前无法精确预估";
+    elements.generationEstimate.title = "普通 Flare / Sunburst 根据实际输入 Token 用量计费。";
+    return;
+  }
+
+  const resolution = elements.resolution.value || "1k";
+  const priceRange = EXT_PRICE_RANGES_CREDITS[resolution] || EXT_PRICE_RANGES_CREDITS["1k"];
+  const imageCount = Math.max(1, Number(elements.imageCount.value) || 1);
+  const format = (amount) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(amount);
+  const min = priceRange.min * imageCount;
+  const max = priceRange.max * imageCount;
+  elements.generationEstimate.textContent = `${format(min)}–${format(max)} Credits · ${imageCount} 张`;
+  elements.generationEstimate.title = `按 APIMart 当前公开账户档位区间估算（${resolution.toUpperCase()}）；实际扣费取决于 API Key 的价格档位。`;
+}
+
+async function refreshApiBalance() {
+  const apiKey = String(elements.apiKey.value || "").trim();
+  const requestId = ++balanceRequestId;
+  if (!apiKey) {
+    elements.apiBalanceStatus.removeAttribute("data-state");
+    elements.apiBalanceStatus.textContent = "填写并保存 API Key 后查询余额";
+    elements.refreshBalanceBtn.disabled = true;
+    return;
+  }
+
+  elements.refreshBalanceBtn.disabled = true;
+  elements.apiBalanceStatus.dataset.state = "loading";
+  elements.apiBalanceStatus.textContent = "余额查询中…";
+
+  try {
+    const response = await fetch("/api/balance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+    });
+    const result = await response.json();
+    const balance = result?.balance || result?.data?.balance || result?.data || result;
+    if (!response.ok || result?.success === false) {
+      throw new Error(result?.message || result?.error?.message || `余额查询失败（HTTP ${response.status}）`);
+    }
+
+    if (requestId !== balanceRequestId) return;
+    if (balance?.unlimited_quota) {
+      elements.apiBalanceStatus.textContent = "余额：无限额度";
+    } else {
+      const format = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(Number(value));
+      const parts = [];
+      const remainBalance = balance?.remain_balance == null || balance.remain_balance === "" ? NaN : Number(balance.remain_balance);
+      const remainCredits = balance?.remain_credits == null || balance.remain_credits === "" ? NaN : Number(balance.remain_credits);
+      if (Number.isFinite(remainBalance)) parts.push(format(remainBalance));
+      if (Number.isFinite(remainCredits)) parts.push(`${format(remainCredits)} Credits`);
+      if (!parts.length) throw new Error("余额响应中没有余额字段");
+      elements.apiBalanceStatus.textContent = `余额：${parts.join(" · ")}`;
+    }
+    elements.apiBalanceStatus.dataset.state = "success";
+  } catch (error) {
+    if (requestId !== balanceRequestId) return;
+    elements.apiBalanceStatus.dataset.state = "error";
+    elements.apiBalanceStatus.textContent = `余额查询失败：${error.message || "未知错误"}`;
+  } finally {
+    if (requestId === balanceRequestId) {
+      elements.refreshBalanceBtn.disabled = !elements.apiKey.value.trim();
+    }
+  }
 }
 
 function rememberFlexibleSize() {

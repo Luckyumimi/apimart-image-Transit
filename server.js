@@ -30,6 +30,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (requestUrl.pathname === "/api/balance" && req.method === "POST") {
+      await handleBalance(req, res);
+      return;
+    }
+
     if (requestUrl.pathname === "/api/uploads/images" && req.method === "POST") {
       await handleImageUpload(req, res);
       return;
@@ -110,6 +115,25 @@ async function handleGenerate(req, res) {
     pruneTaskRegistry();
   }
 
+  sendJson(res, upstream.status, result);
+}
+
+async function handleBalance(req, res) {
+  const body = await readJsonBody(req);
+  const apiKey = String(body.apiKey || "").trim();
+
+  if (!apiKey) {
+    sendJson(res, 400, { success: false, message: "apiKey is required" });
+    return;
+  }
+
+  const upstream = await fetch(`${FIXED_BASE_URL}/v1/balance`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  const result = await readUpstreamJson(upstream);
   sendJson(res, upstream.status, result);
 }
 

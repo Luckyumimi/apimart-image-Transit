@@ -1241,7 +1241,7 @@ function renderHistory() {
         : "";
       const queryButton = String(item.taskId).startsWith("error-")
         ? ""
-        : `<button type="button" class="launcher-button launcher-button--compact history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}">重新查询</button>`;
+        : `<button type="button" class="launcher-button launcher-button--compact history-action history-action--query" data-history-task-id="${escapeHtml(item.taskId)}" aria-label="重新查询任务" title="重新查询任务"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M21 22v-6h-6"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/></svg></button>`;
       const elapsedMarkup = isLive && startedAt
         ? `<span data-history-elapsed-start="${startedAt}">${formatDuration(Date.now() - startedAt)}</span> · 进行中`
         : elapsed === null
@@ -1255,7 +1255,10 @@ function renderHistory() {
           </div>
           <div class="history-item__panel">
             <div class="history-item__text">
-              <strong>${escapeHtml(modeLabel)}</strong>
+              <div class="history-item__heading">
+                <strong>${escapeHtml(modeLabel)}</strong>
+                ${queryButton}
+              </div>
               <div class="history-meta">提示词: ${escapeHtml(item.prompt || "无提示词")}</div>
             </div>
             <div class="history-item__info">
@@ -1264,7 +1267,6 @@ function renderHistory() {
               <div class="history-task">${escapeHtml(item.taskId)}</div>
               <div class="history-item__actions">
                 <button type="button" class="launcher-button launcher-button--compact history-action" data-history-details-id="${escapeHtml(item.taskId)}">详情</button>
-                ${queryButton}
                 ${downloadButtons}
                 <button type="button" class="launcher-button launcher-button--compact history-action history-action--delete" data-delete-history-id="${escapeHtml(item.taskId)}" title="只删除本机历史记录，不会取消任务">删除</button>
               </div>

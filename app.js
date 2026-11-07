@@ -806,13 +806,11 @@ async function refreshApiBalance() {
       const amount = Number(value);
       return Number.isFinite(amount) ? amount : null;
     };
-    const remainBalance = readAmount(balance?.remain_balance);
     const remainCredits = readAmount(balance?.remain_credits);
     const usedBalance = readAmount(balance?.used_balance);
     const usedCredits = readAmount(balance?.used_credits);
     const parts = [];
 
-    if (remainBalance !== null) parts.push(`账户剩余余额：${format(remainBalance)}`);
     if (remainCredits !== null) parts.push(`剩余积分：${format(remainCredits)} Credits`);
     if (usedBalance !== null) parts.push(`账户已用余额：${format(usedBalance)}`);
     if (usedCredits !== null) parts.push(`已用积分：${format(usedCredits)} Credits`);

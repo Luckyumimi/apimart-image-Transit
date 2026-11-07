@@ -12,6 +12,19 @@
 - `test/cli.test.js`：不访问 APIMart 的 CLI 模拟路由测试
 - `index.html`、`styles.css`：页面结构和样式
 
+## Codex Skill
+
+`cliapi` 是仓库内的项目级 skill，位于 `.agents/skills/cliapi/SKILL.md`。在 Codex 中打开本仓库即可按 `$cliapi` 使用。要在其他项目中复用，可复制到用户级 skills 目录：
+
+```powershell
+$skillsRoot = if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME "skills" } else { Join-Path $env:USERPROFILE ".codex\skills" }
+$skillTarget = Join-Path $skillsRoot "cliapi"
+New-Item -ItemType Directory -Path $skillTarget -Force | Out-Null
+Copy-Item ".\.agents\skills\cliapi\SKILL.md" -Destination $skillTarget -Force
+```
+
+复制后重新加载 Codex 或开启新会话，再调用 `$cliapi`。
+
 ## 在线演示
 
 演示站点：[https://image2.hatsuneniku.shop/](https://image2.hatsuneniku.shop/) **你真的敢在在线演示站点填KEY吗？？？**
@@ -143,7 +156,7 @@ npm run image -- --prompt "雨夜中的红色跑车" --model ext-flare --size 16
 
 也可以运行 `node cli.js --help` 查看所有参数。`--model` 支持 `ext-flare`、`ext-sunburst`、`flare`、`sunburst`；`--size` 支持 `auto`、比例或精确尺寸，例如 `1536x1024`。普通模型精确尺寸必须满足接口的倍数、像素面积、最长边和比例限制；此模式省略分辨率档位。Ext 只开放 1K、单张和文档支持的比例。
 
-参考图可重复指定 `--reference <文件>`，最多 16 张。`--output <目录>` 会经 `/api/download` 保存图片；省略时输出图片 URL。默认提交后等待结果；`--no-wait` 只提交并打印任务 ID，稍后可用 `--task <任务 ID>` 继续查询。CLI 从 `APIMART_API_KEY` 环境变量读取密钥，不要把真实密钥写入脚本或命令历史。指定 `IMAGE_STUDIO_URL` 时，密钥会发送给该网站实例，请仅连接你信任的服务。
+参考图可重复指定 `--reference <文件>`，最多 16 张。`--output <目录>` 会经 `/api/download` 保存图片；省略时输出图片 URL。默认提交后等待结果，首次轮询延迟为 6000 ms；`--no-wait` 只提交并打印任务 ID，稍后可用 `--task <任务 ID>` 继续查询。CLI 从 `APIMART_API_KEY` 环境变量读取密钥，不要把真实密钥写入脚本或命令历史。指定 `IMAGE_STUDIO_URL` 时，密钥会发送给该网站实例，请仅连接你信任的服务。
 
 运行 `npm test` 可执行 CLI 参数和模拟网站路由测试；测试使用虚构响应，不会向 APIMart 发送请求。
 
@@ -156,7 +169,9 @@ npm run image -- --prompt "雨夜中的红色跑车" --model ext-flare --size 16
 
 ### 架构审查记录
 
-本次尺寸窗口、全页拖图和调试卡片均由客户端确定性逻辑完成，不增加模型推理，也不改变页面生成请求。无参考图时每次提交 1 次 `/api/generate`；每张参考图额外调用 1 次现有上传接口，页面和 CLI 都最多接受 16 张并按顺序上传。CLI 每次状态请求复用 `/api/tasks/:taskId`，以终态或超时为止；选择下载目录后，每张结果图额外调用 1 次 `/api/download`。自动重试与回退请求均为 0；轮询间隔和首次延迟由 CLI 参数控制，网站设置页仍沿用原值。浏览器缩略图缓存继续使用 IndexedDB，CLI 不做远程缓存，仅写入用户指定目录。API Key 仍只在调用站点代理时传入。模型计费行为不变，收益是可脚本化调用、减少不支持尺寸的提交，以及让图片拖入位置更灵活。
+比例预览、Ext 锁定分辨率、设置弹窗交互、卡片悬停和首次轮询默认值修正均由客户端确定性逻辑完成，不增加模型推理。尺寸预览和选择器形状按实际宽高比计算；设置弹窗恢复进场动画，拖选文字离开弹窗不会触发关闭；历史卡片悬停不再变色，内部按钮仍提供反馈。
+
+每个任务仍提交 1 次 `/api/generate`；每张参考图额外调用 1 次上传接口，最多 16 张；轮询每 3000 ms 调用 1 次 `/api/tasks/:taskId`，直到终态或 120000 ms 超时；选择下载目录后每个结果调用 1 次 `/api/download`。首次轮询默认由 12000 ms 改为 6000 ms，网站和 CLI 保持一致；对仍在运行的任务，前 12 秒最多可能多 2 次状态查询，快速完成时结果最多提前约 6 秒显示。生成请求和模型计费不变，自动重试与模型回退仍为 0；变化限于状态查询流量。浏览器历史缩略图缓存仍使用 IndexedDB，CLI 不做远程缓存，仅写入指定目录。API Key 仍只传给调用的可信站点代理。比例选择器的 15 个选项与共享 API 契约一致，窄屏预览保持画布比例且无横向溢出。
 
 ## 常用运维命令
 

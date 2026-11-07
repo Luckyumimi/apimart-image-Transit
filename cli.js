@@ -30,7 +30,7 @@ const HELP = `APIMart Image Studio CLI
   --output <目录>              下载生成结果到目录；省略时只输出图片 URL
   --task <任务 ID>              继续查询已有任务，需使用同一个网站实例
   --language <语言>            zh | en | ko | ja，默认 zh
-  --initial-delay-ms <毫秒>    首次轮询延迟，默认 12000
+  --initial-delay-ms <毫秒>    首次轮询延迟，默认 6000
   --poll-interval-ms <毫秒>    轮询间隔，默认 3000
   --timeout-ms <毫秒>          轮询超时，默认 120000
   --no-wait                    提交后只输出任务 ID
@@ -53,7 +53,7 @@ function parseArgs(argv) {
     outputDir: "",
     taskId: "",
     language: "zh",
-    initialDelayMs: 12000,
+    initialDelayMs: 6000,
     pollIntervalMs: 3000,
     timeoutMs: 120000,
     noWait: false,

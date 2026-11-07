@@ -88,8 +88,8 @@
                 <option value="2k">2K</option>
                 <option value="4k">4K</option>
               </select>
-              <div id="fixedExtResolution" class="field-shell" hidden>
-                <input class="launcher-input" type="text" value="1K" readonly aria-label="Ext 当前开放分辨率：1K">
+              <div id="fixedExtResolution" class="field-shell disabled" hidden>
+                <input class="launcher-input" type="text" value="1K" disabled aria-label="Ext 当前开放分辨率：1K">
               </div>
             </div>
             <div class="ctrl">
@@ -301,7 +301,7 @@
       <div class="ctrl">
         <label class="ctrl__label" for="initialPollDelay">首次延迟 (ms)</label>
         <div class="field-shell">
-          <input id="initialPollDelay" class="launcher-input" name="initialPollDelay" type="number" min="0" step="1000" value="12000">
+          <input id="initialPollDelay" class="launcher-input" name="initialPollDelay" type="number" min="0" step="1000" value="6000">
         </div>
       </div>
       <div class="ctrl">
@@ -337,21 +337,21 @@
         </div>
         <p id="sizeModeHint" class="ctrl__hint" aria-live="polite"></p>
         <div id="sizeRatioGrid" class="size-ratio-grid" aria-label="选择比例">
-          <button type="button" class="size-ratio-option" data-ratio="1:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 1"></span><span>1:1</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="3:2" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 2"></span><span>3:2</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="2:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 2 / 3"></span><span>2:3</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="16:9" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 16 / 9"></span><span>16:9</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="9:16" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 9 / 16"></span><span>9:16</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="4:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 4 / 3"></span><span>4:3</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="3:4" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 4"></span><span>3:4</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="5:4" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 5 / 4"></span><span>5:4</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="4:5" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 4 / 5"></span><span>4:5</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="2:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 2 / 1"></span><span>2:1</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="1:2" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 2"></span><span>1:2</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="21:9" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 21 / 9"></span><span>21:9</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="9:21" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 9 / 21"></span><span>9:21</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="3:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 1"></span><span>3:1</span></button>
-          <button type="button" class="size-ratio-option" data-ratio="1:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 3"></span><span>1:3</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="1:1" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>1:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:2" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>3:2</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="2:3" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>2:3</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="16:9" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>16:9</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="9:16" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>9:16</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="4:3" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>4:3</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:4" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>3:4</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="5:4" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>5:4</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="4:5" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>4:5</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="2:1" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>2:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="1:2" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>1:2</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="21:9" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>21:9</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="9:21" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>9:21</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:1" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>3:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="1:3" aria-pressed="false"><span class="size-ratio-option__shape"></span><span>1:3</span></button>
         </div>
         <div id="customSizeControls" class="custom-size-controls" hidden>
           <div class="size-dimension-fields">
@@ -374,7 +374,7 @@
           <span>预览</span>
           <strong id="sizePreviewDimensions">自动</strong>
         </div>
-        <div class="size-preview__stage">
+        <div id="sizePreviewStage" class="size-preview__stage">
           <div id="sizePreviewFrame" class="size-preview__frame"></div>
         </div>
         <p id="sizePreviewNote" class="ctrl__hint"></p>

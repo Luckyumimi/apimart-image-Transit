@@ -168,7 +168,7 @@ const DEFAULTS = {
   imageCount: "1",
   taskLanguage: "zh",
   pollInterval: "3000",
-  initialPollDelay: "12000",
+  initialPollDelay: "6000",
   pollTimeout: "120000",
 };
 
@@ -200,6 +200,7 @@ const elements = {
   customHeightInput: document.getElementById("customHeightInput"),
   customSizeError: document.getElementById("customSizeError"),
   sizePreviewDimensions: document.getElementById("sizePreviewDimensions"),
+  sizePreviewStage: document.getElementById("sizePreviewStage"),
   sizePreviewFrame: document.getElementById("sizePreviewFrame"),
   sizePreviewNote: document.getElementById("sizePreviewNote"),
   fixedGifRatio: document.getElementById("fixedGifRatio"),
@@ -263,6 +264,7 @@ let lastFlexibleCustomHeight = null;
 let lastFlexibleImageCount = null;
 let previousControlMode = null;
 let sizeDialogDraft = null;
+let sizePreviewObserver = null;
 let fileDragDepth = 0;
 
 init();
@@ -272,11 +274,18 @@ function init() {
   if (savedState?.modelVariant === "gpt-image-2.6-flare") {
     savedState.modelVariant = DEFAULTS.modelVariant;
   }
+  if (savedState?.initialPollDelay === "12000" || savedState?.initialPollDelay === 12000) {
+    savedState.initialPollDelay = DEFAULTS.initialPollDelay;
+  }
   generationHistory = getHistoryState();
   hydrateForm(savedState);
   enhanceSelects();
   syncModelControls();
   syncModeBadge();
+  if ("ResizeObserver" in window) {
+    sizePreviewObserver = new ResizeObserver(() => updateSizePreviewFrame());
+    sizePreviewObserver.observe(elements.sizePreviewStage);
+  }
   loadBlobCache().then(() => {
     renderHistory();
   });
@@ -288,22 +297,21 @@ function init() {
 }
 
 function attachEvents() {
+  window.addEventListener("resize", () => {
+    if (sizeDialogDraft) updateSizeDialog();
+  });
   elements.openSettingsBtn.addEventListener("click", openSettingsModal);
   elements.closeSettingsBtn.addEventListener("click", closeSettingsModal);
   elements.saveSettingsBtn.addEventListener("click", () => {
     persistForm();
     closeSettingsModal();
   });
-  elements.settingsModal.addEventListener("click", (event) => {
-    if (event.target === elements.settingsModal) closeSettingsModal();
-  });
+  bindBackdropDismiss(elements.settingsModal, closeSettingsModal);
   elements.openSizeSettingsBtn.addEventListener("click", openSizeSettingsModal);
   elements.closeSizeSettingsBtn.addEventListener("click", closeSizeSettingsModal);
   elements.cancelSizeSettingsBtn.addEventListener("click", closeSizeSettingsModal);
   elements.confirmSizeSettingsBtn.addEventListener("click", confirmSizeSettings);
-  elements.sizeSettingsModal.addEventListener("click", (event) => {
-    if (event.target === elements.sizeSettingsModal) closeSizeSettingsModal();
-  });
+  bindBackdropDismiss(elements.sizeSettingsModal, closeSizeSettingsModal);
   elements.sizeSettingsModal.querySelectorAll("[data-size-mode]").forEach((button) => {
     button.addEventListener("click", () => setSizeDialogMode(button.dataset.sizeMode));
   });
@@ -774,6 +782,11 @@ function updateSizeDialog() {
     const disabled = !allowedRatios.includes(button.dataset.ratio);
     button.disabled = disabled;
     button.setAttribute("aria-pressed", String(button.dataset.ratio === sizeDialogDraft.aspectRatio && sizeDialogDraft.mode === "ratio"));
+    const [width, height] = button.dataset.ratio.split(":").map(Number);
+    const fitted = fitRatio(width, height, 40, 26);
+    const shape = button.querySelector(".size-ratio-option__shape");
+    shape.style.width = `${fitted.width}px`;
+    shape.style.height = `${fitted.height}px`;
   });
 
   const customError = sizeDialogDraft.mode === "custom"
@@ -787,8 +800,8 @@ function updateSizeDialog() {
     : sizeDialogDraft.mode === "ratio"
     ? sizeDialogDraft.aspectRatio.split(":").map(Number)
     : [1, 1];
-  const ratio = ratioParts.every((value) => Number.isFinite(value) && value > 0) ? ratioParts.join(" / ") : "1 / 1";
-  elements.sizePreviewFrame.style.aspectRatio = ratio;
+  const previewRatio = ratioParts.every((value) => Number.isFinite(value) && value > 0) ? ratioParts : [1, 1];
+  updateSizePreviewFrame(previewRatio[0], previewRatio[1]);
 
   const summary = sizeDialogDraft.mode === "custom"
     ? `${sizeDialogDraft.width || "?"} × ${sizeDialogDraft.height || "?"} px`
@@ -806,6 +819,31 @@ function updateSizeDialog() {
     : sizeDialogDraft.mode === "custom"
     ? customError || "尺寸符合接口限制。"
     : "预览仅表示画布长宽关系。";
+}
+
+function updateSizePreviewFrame(width, height) {
+  if (!sizeDialogDraft) return;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    [width, height] = sizeDialogDraft.mode === "custom"
+      ? [Number(sizeDialogDraft.width), Number(sizeDialogDraft.height)]
+      : sizeDialogDraft.mode === "ratio"
+      ? sizeDialogDraft.aspectRatio.split(":").map(Number)
+      : [1, 1];
+  }
+  if (width <= 0 || height <= 0) return;
+
+  const fitted = fitRatio(width, height, elements.sizePreviewStage.clientWidth, elements.sizePreviewStage.clientHeight);
+  if (fitted.width <= 0 || fitted.height <= 0) return;
+  elements.sizePreviewFrame.style.width = `${fitted.width}px`;
+  elements.sizePreviewFrame.style.height = `${fitted.height}px`;
+}
+
+function fitRatio(width, height, maxWidth, maxHeight) {
+  if (![width, height, maxWidth, maxHeight].every((value) => Number.isFinite(value) && value > 0)) {
+    return { width: 0, height: 0 };
+  }
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  return { width: width * scale, height: height * scale };
 }
 
 function confirmSizeSettings() {
@@ -1592,6 +1630,21 @@ function openSettingsModal() {
   elements.settingsModal.hidden = false;
   requestAnimationFrame(() => {
     elements.apiKey.focus();
+  });
+}
+
+function bindBackdropDismiss(backdrop, close) {
+  let pointerStartedOnBackdrop = false;
+  backdrop.addEventListener("pointerdown", (event) => {
+    pointerStartedOnBackdrop = event.target === backdrop;
+  });
+  backdrop.addEventListener("pointerup", (event) => {
+    const shouldClose = pointerStartedOnBackdrop && event.target === backdrop;
+    pointerStartedOnBackdrop = false;
+    if (shouldClose) close();
+  });
+  backdrop.addEventListener("pointercancel", () => {
+    pointerStartedOnBackdrop = false;
   });
 }
 

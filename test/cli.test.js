@@ -19,6 +19,7 @@ test("CLI keeps Ext on the fixed 1K single-image contract", () => {
   const options = parseArgs(["--prompt", "A red kite"]);
   options.server = "http://127.0.0.1:43888";
   const payload = buildPayload(options);
+  assert.equal(options.initialDelayMs, 6000);
   assert.equal(payload.model, "gpt-image-2.6-ext");
   assert.equal(payload.version, "flare");
   assert.equal(payload.resolution, "1k");

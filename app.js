@@ -427,7 +427,8 @@ function attachEvents() {
   elements.lightboxPrevBtn.addEventListener("click", showPreviousLightboxImage);
   elements.lightboxNextBtn.addEventListener("click", showNextLightboxImage);
   elements.lightboxModal.addEventListener("click", (event) => {
-    if (event.target === elements.lightboxModal) closeLightbox();
+    if (event.target === elements.lightboxImage || event.target.closest(".lightbox-nav, .lightbox-close")) return;
+    closeLightbox();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.clearHistoryModal.hidden) {

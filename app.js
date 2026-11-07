@@ -807,12 +807,10 @@ async function refreshApiBalance() {
       return Number.isFinite(amount) ? amount : null;
     };
     const remainCredits = readAmount(balance?.remain_credits);
-    const usedBalance = readAmount(balance?.used_balance);
     const usedCredits = readAmount(balance?.used_credits);
     const parts = [];
 
     if (remainCredits !== null) parts.push(`剩余积分：${format(remainCredits)} Credits`);
-    if (usedBalance !== null) parts.push(`账户已用余额：${format(usedBalance)}`);
     if (usedCredits !== null) parts.push(`已用积分：${format(usedCredits)} Credits`);
     if (!parts.length) throw new Error("余额响应中没有余额字段");
     elements.apiBalanceStatus.textContent = parts.join(" · ");

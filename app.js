@@ -3,7 +3,7 @@ const HISTORY_KEY = "apimart-image-bridge-history";
 const FIXED_BASE_URL = "https://api.apimart.ai";
 const MAX_HISTORY_ITEMS = 20;
 const MAX_REFERENCE_IMAGES = 16;
-const EXT_IMAGE_RATIOS = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"];
+const EXT_IMAGE_RATIOS = ImageContract.extAspectRatios;
 const IDB_NAME = "apimart-image-store";
 const IDB_STORE = "images";
 const IDB_VERSION = 1;
@@ -158,6 +158,9 @@ async function loadBlobCache() {
 const DEFAULTS = {
   modelVariant: "gpt-image-2.6-ext-flare",
   aspectRatio: "auto",
+  sizeMode: "auto",
+  customWidth: "1024",
+  customHeight: "1024",
   resolution: "1k",
   outputFormat: "",
   quality: "",
@@ -180,8 +183,28 @@ const elements = {
   modelVariant: document.getElementById("modelVariant"),
   modelBillingHint: document.getElementById("modelBillingHint"),
   aspectRatio: document.getElementById("aspectRatio"),
+  sizeMode: document.getElementById("sizeMode"),
+  customWidth: document.getElementById("customWidth"),
+  customHeight: document.getElementById("customHeight"),
+  sizeSummary: document.getElementById("sizeSummary"),
+  openSizeSettingsBtn: document.getElementById("openSizeSettingsBtn"),
+  sizeSettingsModal: document.getElementById("sizeSettingsModal"),
+  closeSizeSettingsBtn: document.getElementById("closeSizeSettingsBtn"),
+  cancelSizeSettingsBtn: document.getElementById("cancelSizeSettingsBtn"),
+  confirmSizeSettingsBtn: document.getElementById("confirmSizeSettingsBtn"),
+  customSizeModeBtn: document.getElementById("customSizeModeBtn"),
+  sizeModeHint: document.getElementById("sizeModeHint"),
+  sizeRatioGrid: document.getElementById("sizeRatioGrid"),
+  customSizeControls: document.getElementById("customSizeControls"),
+  customWidthInput: document.getElementById("customWidthInput"),
+  customHeightInput: document.getElementById("customHeightInput"),
+  customSizeError: document.getElementById("customSizeError"),
+  sizePreviewDimensions: document.getElementById("sizePreviewDimensions"),
+  sizePreviewFrame: document.getElementById("sizePreviewFrame"),
+  sizePreviewNote: document.getElementById("sizePreviewNote"),
   fixedGifRatio: document.getElementById("fixedGifRatio"),
   resolution: document.getElementById("resolution"),
+  resolutionControl: document.getElementById("resolutionCtrl"),
   fixedExtResolution: document.getElementById("fixedExtResolution"),
   outputFormat: document.getElementById("outputFormat"),
   quality: document.getElementById("quality"),
@@ -202,8 +225,9 @@ const elements = {
   resetBtn: document.getElementById("resetBtn"),
   statusText: document.getElementById("statusText"),
   requestPreview: document.getElementById("requestPreview"),
-  requestDetails: document.getElementById("requestDetails"),
-  rawResult: document.getElementById("rawResult"),
+  diagnosticsCard: document.getElementById("diagnosticsCard"),
+  diagnosticsContent: document.getElementById("diagnosticsContent"),
+  toggleDiagnosticsBtn: document.getElementById("toggleDiagnosticsBtn"),
   rawResultContent: document.getElementById("rawResultContent"),
   headerStatus: document.querySelector(".header__status"),
   modeBadge: document.getElementById("modeBadge"),
@@ -221,6 +245,7 @@ const elements = {
   lightboxPrevBtn: document.getElementById("lightboxPrevBtn"),
   lightboxNextBtn: document.getElementById("lightboxNextBtn"),
   lightboxCloseBtn: document.getElementById("lightboxCloseBtn"),
+  dropOverlay: document.getElementById("dropOverlay"),
 };
 
 let activeTasks = new Map();
@@ -232,8 +257,13 @@ let lightboxIndex = 0;
 let activeSelectPicker = null;
 let lastFlexibleResolution = null;
 let lastFlexibleAspectRatio = null;
+let lastFlexibleSizeMode = null;
+let lastFlexibleCustomWidth = null;
+let lastFlexibleCustomHeight = null;
 let lastFlexibleImageCount = null;
 let previousControlMode = null;
+let sizeDialogDraft = null;
+let fileDragDepth = 0;
 
 init();
 
@@ -267,9 +297,30 @@ function attachEvents() {
   elements.settingsModal.addEventListener("click", (event) => {
     if (event.target === elements.settingsModal) closeSettingsModal();
   });
+  elements.openSizeSettingsBtn.addEventListener("click", openSizeSettingsModal);
+  elements.closeSizeSettingsBtn.addEventListener("click", closeSizeSettingsModal);
+  elements.cancelSizeSettingsBtn.addEventListener("click", closeSizeSettingsModal);
+  elements.confirmSizeSettingsBtn.addEventListener("click", confirmSizeSettings);
+  elements.sizeSettingsModal.addEventListener("click", (event) => {
+    if (event.target === elements.sizeSettingsModal) closeSizeSettingsModal();
+  });
+  elements.sizeSettingsModal.querySelectorAll("[data-size-mode]").forEach((button) => {
+    button.addEventListener("click", () => setSizeDialogMode(button.dataset.sizeMode));
+  });
+  elements.sizeRatioGrid.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-ratio]");
+    if (!option || option.disabled) return;
+    sizeDialogDraft.aspectRatio = option.dataset.ratio;
+    setSizeDialogMode("ratio");
+  });
+  elements.customWidthInput.addEventListener("input", updateSizeDialog);
+  elements.customHeightInput.addEventListener("input", updateSizeDialog);
+  elements.toggleDiagnosticsBtn.addEventListener("click", toggleDiagnostics);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.settingsModal.hidden) {
       closeSettingsModal();
+    } else if (event.key === "Escape" && !elements.sizeSettingsModal.hidden) {
+      closeSizeSettingsModal();
     }
   });
 
@@ -278,7 +329,11 @@ function attachEvents() {
   elements.modelVariant.addEventListener("change", syncModelControls);
   elements.outputFormat.addEventListener("change", syncModelControls);
   elements.aspectRatio.addEventListener("change", () => {
-    if (elements.outputFormat.value !== "gif") lastFlexibleAspectRatio = elements.aspectRatio.value;
+    if (elements.outputFormat.value !== "gif") {
+      elements.sizeMode.value = elements.aspectRatio.value === "auto" ? "auto" : "ratio";
+      rememberFlexibleSize();
+      syncSizeSummary();
+    }
   });
   elements.form.addEventListener("submit", handleSubmit);
   elements.prompt.addEventListener("paste", handlePromptPaste);
@@ -315,20 +370,12 @@ function attachEvents() {
     await refreshHistoryEntry(taskId);
   });
 
-  elements.rawResult.addEventListener("click", (event) => {
-    const trigger = event.target.closest("[data-raw-toggle]");
-    if (!trigger) return;
-    const content = elements.rawResult.querySelector("#rawResultContent");
-    const expanded = trigger.getAttribute("aria-expanded") === "true";
-    trigger.setAttribute("aria-expanded", String(!expanded));
-    if (content) content.hidden = expanded;
-  });
-
   elements.resetBtn.addEventListener("click", () => {
     clearStorage();
     generationHistory = getHistoryState();
     attachmentItems.forEach(revokeAttachmentPreview);
     attachmentItems = [];
+    previousControlMode = null;
     hydrateForm(DEFAULTS);
     syncModeBadge();
     renderAttachmentTray();
@@ -336,8 +383,9 @@ function attachEvents() {
     elements.taskBadge.textContent = "暂无";
     setStatus("准备就绪。", "idle");
     elements.requestPreview.textContent = "尚未提交请求";
-    if (elements.requestDetails) elements.requestDetails.open = false;
     renderRawResult(null);
+    elements.diagnosticsCard.hidden = true;
+    setDiagnosticsExpanded(false);
   });
 
   elements.lightboxCloseBtn.addEventListener("click", closeLightbox);
@@ -367,14 +415,25 @@ function attachEvents() {
     const activeSrc = img.dataset.lightbox || img.getAttribute("src") || "";
     openLightbox(sources.length ? sources : [activeSrc], activeSrc);
   });
+
+  window.addEventListener("dragenter", handlePageImageDragEnter);
+  window.addEventListener("dragover", handlePageImageDragOver);
+  window.addEventListener("dragleave", handlePageImageDragLeave);
+  window.addEventListener("drop", handlePageImageDrop);
 }
 
 function hydrateForm(savedState = {}) {
   const state = { ...DEFAULTS, ...savedState };
+  if (!Object.prototype.hasOwnProperty.call(savedState, "sizeMode")) {
+    state.sizeMode = state.aspectRatio === "auto" ? "auto" : "ratio";
+  }
   elements.fixedBaseUrl.value = FIXED_BASE_URL;
   elements.apiKey.value = state.apiKey || "";
   elements.modelVariant.value = state.modelVariant || DEFAULTS.modelVariant;
   elements.aspectRatio.value = state.aspectRatio || DEFAULTS.aspectRatio;
+  elements.sizeMode.value = state.sizeMode || DEFAULTS.sizeMode;
+  elements.customWidth.value = state.customWidth || DEFAULTS.customWidth;
+  elements.customHeight.value = state.customHeight || DEFAULTS.customHeight;
   elements.resolution.value = state.resolution || DEFAULTS.resolution;
   elements.outputFormat.value = state.outputFormat || DEFAULTS.outputFormat;
   elements.quality.value = state.quality || DEFAULTS.quality;
@@ -392,6 +451,12 @@ function hydrateForm(savedState = {}) {
 function enhanceSelects() {
   document.querySelectorAll("select").forEach((select) => {
     if (select.dataset.enhanced === "true") return;
+    if (select.id === "aspectRatio") {
+      select.classList.add("select-native");
+      select.tabIndex = -1;
+      select.setAttribute("aria-hidden", "true");
+      return;
+    }
 
     const control = select.closest(".ctrl");
     const label = control?.querySelector(`label[for="${select.id}"]`);
@@ -514,6 +579,7 @@ function syncModelControls() {
     lastFlexibleResolution = elements.resolution.value || "1k";
     lastFlexibleAspectRatio = elements.aspectRatio.value || "auto";
     lastFlexibleImageCount = elements.imageCount.value || "1";
+    rememberFlexibleSize();
   } else {
     if (previousControlMode.isExt && !isExt) {
       elements.resolution.value = lastFlexibleResolution || "1k";
@@ -540,6 +606,16 @@ function syncModelControls() {
     } else if (!requiresSingleImage) {
       lastFlexibleImageCount = elements.imageCount.value || "1";
     }
+
+    const wasRestrictedSize = previousControlMode.isExt || previousControlMode.isGif;
+    const isRestrictedSize = isExt || isGif;
+    if (!wasRestrictedSize && isRestrictedSize) {
+      rememberFlexibleSize();
+    } else if (wasRestrictedSize && !isRestrictedSize) {
+      restoreFlexibleSize();
+    } else if (!isRestrictedSize) {
+      rememberFlexibleSize();
+    }
   }
 
   const disabledRatios = new Set();
@@ -550,16 +626,23 @@ function syncModelControls() {
     if (!allowed) disabledRatios.add(option.value);
   });
   setSelectOptionsDisabled(elements.aspectRatio, disabledRatios);
+  if (isExt && elements.sizeMode.value === "custom") {
+    elements.sizeMode.value = "ratio";
+    elements.aspectRatio.value = "auto";
+  }
   if (isGif) {
+    elements.sizeMode.value = "auto";
     elements.aspectRatio.value = "auto";
   } else if (disabledRatios.has(elements.aspectRatio.value)) {
     elements.aspectRatio.value = "auto";
   }
-  elements.aspectRatio._pickerInstance.picker.hidden = isGif;
+  elements.openSizeSettingsBtn.hidden = isGif;
   elements.fixedGifRatio.hidden = !isGif;
 
   if (isExt) elements.resolution.value = "1k";
-  elements.resolution._pickerInstance.picker.hidden = isExt;
+  const isCustomSize = elements.sizeMode.value === "custom";
+  elements.resolution._pickerInstance.picker.hidden = isExt || isCustomSize;
+  elements.resolutionControl.hidden = isCustomSize;
   elements.fixedExtResolution.hidden = !isExt;
 
   elements.imageCount.disabled = requiresSingleImage;
@@ -602,8 +685,148 @@ function syncModelControls() {
     : "最多 16 张参考图，按添加顺序用于图生图。";
 
   previousControlMode = { isExt, isGif, requiresSingleImage };
+  syncSizeSummary();
   syncSelectPickers();
   syncSubmitAvailability();
+}
+
+function rememberFlexibleSize() {
+  lastFlexibleSizeMode = elements.sizeMode.value || "auto";
+  lastFlexibleCustomWidth = elements.customWidth.value || "1024";
+  lastFlexibleCustomHeight = elements.customHeight.value || "1024";
+  lastFlexibleAspectRatio = elements.aspectRatio.value || "auto";
+}
+
+function restoreFlexibleSize() {
+  elements.sizeMode.value = lastFlexibleSizeMode || "auto";
+  elements.customWidth.value = lastFlexibleCustomWidth || "1024";
+  elements.customHeight.value = lastFlexibleCustomHeight || "1024";
+  elements.aspectRatio.value = lastFlexibleAspectRatio || "auto";
+}
+
+function getCurrentSizeLabel() {
+  if (elements.sizeMode.value === "custom") {
+    return `${elements.customWidth.value} × ${elements.customHeight.value}`;
+  }
+  if (elements.sizeMode.value === "ratio") return elements.aspectRatio.value;
+  return "自动";
+}
+
+function syncSizeSummary() {
+  elements.sizeSummary.textContent = getCurrentSizeLabel();
+}
+
+function openSizeSettingsModal() {
+  if (elements.outputFormat.value === "gif") return;
+  sizeDialogDraft = {
+    mode: elements.sizeMode.value || "auto",
+    aspectRatio: elements.aspectRatio.value || "auto",
+    width: elements.customWidth.value || "1024",
+    height: elements.customHeight.value || "1024",
+  };
+  elements.customWidthInput.value = sizeDialogDraft.width;
+  elements.customHeightInput.value = sizeDialogDraft.height;
+  elements.sizeSettingsModal.hidden = false;
+  updateSizeDialog();
+  requestAnimationFrame(() => {
+    const selected = elements.sizeSettingsModal.querySelector(`[data-size-mode="${sizeDialogDraft.mode}"]`);
+    (selected && !selected.hidden ? selected : elements.closeSizeSettingsBtn).focus();
+  });
+}
+
+function closeSizeSettingsModal() {
+  elements.sizeSettingsModal.hidden = true;
+  sizeDialogDraft = null;
+  elements.openSizeSettingsBtn.focus();
+}
+
+function setSizeDialogMode(mode) {
+  if (!sizeDialogDraft) return;
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  if (mode === "custom" && isExt) return;
+  if (mode === "ratio" && sizeDialogDraft.aspectRatio === "auto") {
+    sizeDialogDraft.aspectRatio = "1:1";
+  }
+  sizeDialogDraft.mode = mode;
+  updateSizeDialog();
+}
+
+function updateSizeDialog() {
+  if (!sizeDialogDraft) return;
+  sizeDialogDraft.width = elements.customWidthInput.value;
+  sizeDialogDraft.height = elements.customHeightInput.value;
+
+  const isExt = elements.modelVariant.value.startsWith("gpt-image-2.6-ext-");
+  elements.customSizeModeBtn.hidden = isExt;
+  if (isExt && sizeDialogDraft.mode === "custom") sizeDialogDraft.mode = "ratio";
+
+  const allowedRatios = isExt ? EXT_IMAGE_RATIOS.filter((ratio) => ratio !== "auto") : ImageContract.aspectRatios;
+  if (!allowedRatios.includes(sizeDialogDraft.aspectRatio)) {
+    sizeDialogDraft.aspectRatio = allowedRatios.includes("1:1") ? "1:1" : allowedRatios[0];
+  }
+
+  elements.sizeSettingsModal.querySelectorAll("[data-size-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.sizeMode === sizeDialogDraft.mode));
+  });
+  elements.sizeRatioGrid.hidden = sizeDialogDraft.mode !== "ratio";
+  elements.customSizeControls.hidden = sizeDialogDraft.mode !== "custom";
+  elements.sizeRatioGrid.querySelectorAll("[data-ratio]").forEach((button) => {
+    const disabled = !allowedRatios.includes(button.dataset.ratio);
+    button.disabled = disabled;
+    button.setAttribute("aria-pressed", String(button.dataset.ratio === sizeDialogDraft.aspectRatio && sizeDialogDraft.mode === "ratio"));
+  });
+
+  const customError = sizeDialogDraft.mode === "custom"
+    ? ImageContract.validateCustomDimensions(sizeDialogDraft.width, sizeDialogDraft.height)
+    : "";
+  elements.customSizeError.textContent = customError;
+  elements.confirmSizeSettingsBtn.disabled = Boolean(customError);
+
+  const ratioParts = sizeDialogDraft.mode === "custom"
+    ? [Number(sizeDialogDraft.width), Number(sizeDialogDraft.height)]
+    : sizeDialogDraft.mode === "ratio"
+    ? sizeDialogDraft.aspectRatio.split(":").map(Number)
+    : [1, 1];
+  const ratio = ratioParts.every((value) => Number.isFinite(value) && value > 0) ? ratioParts.join(" / ") : "1 / 1";
+  elements.sizePreviewFrame.style.aspectRatio = ratio;
+
+  const summary = sizeDialogDraft.mode === "custom"
+    ? `${sizeDialogDraft.width || "?"} × ${sizeDialogDraft.height || "?"} px`
+    : sizeDialogDraft.mode === "ratio"
+    ? sizeDialogDraft.aspectRatio
+    : "自动尺寸";
+  elements.sizePreviewDimensions.textContent = summary;
+  elements.sizeModeHint.textContent = isExt
+    ? "Ext Flare / Sunburst 当前仅开放 1K 和文档支持的比例。"
+    : sizeDialogDraft.mode === "custom"
+    ? "精确像素尺寸会替代比例；此模式不发送分辨率档位。"
+    : "普通 Flare / Sunburst 支持 1K、2K、4K 及精确像素尺寸。";
+  elements.sizePreviewNote.textContent = sizeDialogDraft.mode === "auto"
+    ? "由模型按提示词自动决定画布比例。"
+    : sizeDialogDraft.mode === "custom"
+    ? customError || "尺寸符合接口限制。"
+    : "预览仅表示画布长宽关系。";
+}
+
+function confirmSizeSettings() {
+  if (!sizeDialogDraft) return;
+  if (sizeDialogDraft.mode === "custom") {
+    const error = ImageContract.validateCustomDimensions(sizeDialogDraft.width, sizeDialogDraft.height);
+    if (error) {
+      elements.customSizeError.textContent = error;
+      return;
+    }
+  }
+
+  elements.sizeMode.value = sizeDialogDraft.mode;
+  elements.aspectRatio.value = sizeDialogDraft.mode === "ratio" ? sizeDialogDraft.aspectRatio : "auto";
+  elements.customWidth.value = sizeDialogDraft.width;
+  elements.customHeight.value = sizeDialogDraft.height;
+  rememberFlexibleSize();
+  syncSizeSummary();
+  syncModelControls();
+  persistForm();
+  closeSizeSettingsModal();
 }
 
 function openSelectPicker(instance, fromEnd) {
@@ -686,6 +909,9 @@ function collectFormState() {
     apiKey: elements.apiKey.value.trim(),
     modelVariant: elements.modelVariant.value,
     aspectRatio: elements.aspectRatio.value,
+    sizeMode: elements.sizeMode.value,
+    customWidth: elements.customWidth.value,
+    customHeight: elements.customHeight.value,
     resolution: elements.resolution.value,
     outputFormat: elements.outputFormat.value,
     quality: elements.quality.value,
@@ -863,9 +1089,10 @@ async function handleSubmit(event) {
   }
 
   setStatus("正在提交生成任务...", "submitting");
-  if (elements.requestDetails) elements.requestDetails.open = false;
+  elements.diagnosticsCard.hidden = false;
+  setDiagnosticsExpanded(false);
   elements.requestPreview.textContent = JSON.stringify(payload, null, 2);
-  elements.requestDetails.hidden = false;
+  renderRawResult(null);
 
   try {
     const response = await fetch("/api/generate", {
@@ -922,10 +1149,14 @@ function buildPayload(state) {
   const payload = {
     model,
     prompt: state.prompt.trim(),
-    size: state.aspectRatio,
-    resolution: state.resolution,
+    size: state.sizeMode === "custom"
+      ? `${state.customWidth}x${state.customHeight}`
+      : state.sizeMode === "ratio"
+      ? state.aspectRatio
+      : "auto",
     n: Number(state.imageCount) || 1,
   };
+  if (state.sizeMode !== "custom") payload.resolution = state.resolution;
 
   if (!payload.prompt) {
     throw new Error("提示词不能为空。");
@@ -952,6 +1183,11 @@ function buildPayload(state) {
 }
 
 function validateResolution(state, isExt) {
+  if (state.sizeMode === "custom") {
+    if (isExt) throw new Error("2.6 Ext 不支持自定义像素尺寸。");
+    const sizeError = ImageContract.validateCustomDimensions(state.customWidth, state.customHeight);
+    if (sizeError) throw new Error(sizeError);
+  }
   if (isExt && !EXT_IMAGE_RATIOS.includes(state.aspectRatio)) {
     throw new Error("2.6 Ext 不支持当前比例，请选择自动或文档列出的 1K 比例。");
   }
@@ -983,7 +1219,7 @@ async function refreshHistoryEntry(taskId) {
     taskLanguage: historyEntry?.taskLanguage || state.taskLanguage || "zh",
   };
 
-  if (elements.requestDetails) elements.requestDetails.open = false;
+  setDiagnosticsExpanded(false);
   elements.taskBadge.textContent = `${taskId} (等 ${activeTasks.size + 1} 个)`;
   setStatus(`正在重新查询任务 ${taskId} ...`, "queued");
 
@@ -1083,6 +1319,46 @@ async function handlePromptPaste(event) {
     })
     .filter(Boolean);
 
+  await queueAttachments(files);
+}
+
+function hasDraggedFiles(event) {
+  return [...(event.dataTransfer?.types || [])].includes("Files");
+}
+
+function handlePageImageDragEnter(event) {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  fileDragDepth += 1;
+  elements.dropOverlay.hidden = false;
+}
+
+function handlePageImageDragOver(event) {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+
+function handlePageImageDragLeave(event) {
+  if (!hasDraggedFiles(event)) return;
+  fileDragDepth = Math.max(0, fileDragDepth - 1);
+  if (!fileDragDepth) elements.dropOverlay.hidden = true;
+}
+
+async function handlePageImageDrop(event) {
+  const droppedFiles = [...(event.dataTransfer?.files || [])];
+  if (!hasDraggedFiles(event) && !droppedFiles.length) return;
+  event.preventDefault();
+  fileDragDepth = 0;
+  elements.dropOverlay.hidden = true;
+  const allowedExtensions = /\.(jpe?g|png|gif|webp)$/i;
+  const files = droppedFiles.filter((file) =>
+    ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type.toLowerCase()) || allowedExtensions.test(file.name)
+  );
+  if (!files.length) {
+    setStatus("拖入的文件中没有受支持的图片。", "warning");
+    return;
+  }
   await queueAttachments(files);
 }
 
@@ -1417,22 +1693,21 @@ function isTaskFailed(status) {
 
 function renderGallery() {}
 
-function renderRawResult(result) {
-  if (!result) {
-    elements.rawResult.hidden = true;
-    elements.rawResultContent.textContent = "";
-    return;
-  }
+function toggleDiagnostics() {
+  setDiagnosticsExpanded(elements.diagnosticsContent.hidden);
+}
 
-  elements.rawResult.hidden = false;
-  elements.rawResult.innerHTML = `
-    <div class="raw-result__head">
-      <h3 class="raw-result__title">原始响应</h3>
-      <button type="button" class="launcher-button launcher-button--compact" data-raw-toggle aria-expanded="false">展开</button>
-    </div>
-    <pre id="rawResultContent" hidden>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
-  `;
-  elements.rawResultContent = elements.rawResult.querySelector("#rawResultContent");
+function setDiagnosticsExpanded(expanded) {
+  elements.diagnosticsContent.hidden = !expanded;
+  elements.toggleDiagnosticsBtn.setAttribute("aria-expanded", String(expanded));
+  elements.toggleDiagnosticsBtn.textContent = expanded ? "收起" : "展开";
+}
+
+function renderRawResult(result) {
+  elements.rawResultContent.textContent = result
+    ? JSON.stringify(result, null, 2)
+    : "等待生成响应";
+  if (result) elements.diagnosticsCard.hidden = false;
 }
 
 function syncSubmitAvailability() {

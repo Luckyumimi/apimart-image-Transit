@@ -4,6 +4,8 @@
   "private": true,
   "description": "Server-proxied APIMart GPT-Image-2 playground",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "image": "node cli.js",
+    "test": "node --test"
   }
 }

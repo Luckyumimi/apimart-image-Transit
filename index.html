@@ -51,8 +51,8 @@
               <p id="modelBillingHint" class="ctrl__hint" aria-live="polite"></p>
             </div>
             <div class="ctrl" id="aspectRatioCtrl">
-              <label class="ctrl__label" for="aspectRatio">比例</label>
-              <select id="aspectRatio" name="aspectRatio">
+              <label class="ctrl__label" id="aspectRatioLabel">比例与尺寸</label>
+              <select id="aspectRatio" class="select-native" name="aspectRatio" aria-hidden="true" tabindex="-1">
                 <option value="auto">自动</option>
                 <option value="1:1">1 : 1</option>
                 <option value="3:2">3 : 2</option>
@@ -70,6 +70,13 @@
                 <option value="3:1">3 : 1</option>
                 <option value="1:3">1 : 3</option>
               </select>
+              <input id="sizeMode" type="hidden" value="auto">
+              <input id="customWidth" type="hidden" value="1024">
+              <input id="customHeight" type="hidden" value="1024">
+              <button id="openSizeSettingsBtn" class="picker-trigger size-control-trigger" type="button" aria-haspopup="dialog" aria-labelledby="aspectRatioLabel sizeSummary">
+                <span id="sizeSummary" class="picker-value">自动</span>
+                <span class="picker-chevron" aria-hidden="true"></span>
+              </button>
               <div id="fixedGifRatio" class="field-shell" hidden>
                 <input class="launcher-input" type="text" value="自动" readonly aria-label="GIF 固定比例：自动">
               </div>
@@ -173,15 +180,25 @@
         </div>
       </div>
 
-      <details id="requestDetails" class="status-box fold fold--sub" hidden>
-        <summary class="fold__head collapsible-summary">
-          <span class="fold__title">请求详情</span>
-          <svg class="fold__arrow" width="14" height="14" viewBox="0 0 14 14"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </summary>
-        <code id="requestPreview" class="fold__code">尚未提交请求</code>
-      </details>
-
-      <div id="rawResult" class="raw-result" hidden></div>
+      <section id="diagnosticsCard" class="card diagnostics-card" hidden aria-label="请求与响应">
+        <div class="card__head diagnostics-card__head">
+          <div>
+            <h2>请求与响应</h2>
+            <p class="section-copy">查看当前请求参数和服务端返回内容。</p>
+          </div>
+          <button id="toggleDiagnosticsBtn" type="button" class="launcher-button launcher-button--compact" aria-expanded="false" aria-controls="diagnosticsContent">展开</button>
+        </div>
+        <div id="diagnosticsContent" class="diagnostics-grid" hidden>
+          <section class="diagnostic-pane" aria-labelledby="requestPreviewTitle">
+            <h3 id="requestPreviewTitle" class="diagnostic-pane__title">请求详情</h3>
+            <pre id="requestPreview" class="diagnostic-code">尚未提交请求</pre>
+          </section>
+          <section class="diagnostic-pane" aria-labelledby="rawResultTitle">
+            <h3 id="rawResultTitle" class="diagnostic-pane__title">原始响应</h3>
+            <pre id="rawResultContent" class="diagnostic-code">等待生成响应</pre>
+          </section>
+        </div>
+      </section>
 
       <div class="card history-panel">
         <div class="card__head">
@@ -200,6 +217,10 @@
       </div>
     </section>
   </main>
+</div>
+
+<div id="dropOverlay" class="drop-overlay" hidden aria-live="polite">
+  <div class="drop-overlay__message">松开图片以添加为参考图</div>
 </div>
 
 <div id="lightboxModal" class="modal-backdrop" hidden>
@@ -296,6 +317,77 @@
   </div>
 </div>
 
+<div id="sizeSettingsModal" class="modal-backdrop" hidden>
+  <div class="modal-card size-dialog" role="dialog" aria-modal="true" aria-labelledby="sizeSettingsTitle" aria-describedby="sizeSettingsDescription">
+    <div class="modal__head">
+      <div>
+        <h2 id="sizeSettingsTitle">画布尺寸</h2>
+        <p id="sizeSettingsDescription" class="modal__desc">选择比例，或为普通模型指定精确像素尺寸。</p>
+      </div>
+      <button id="closeSizeSettingsBtn" type="button" class="btn--icon" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="size-dialog__body">
+      <div class="size-dialog__controls">
+        <div class="segmented size-mode-tabs" role="group" aria-label="尺寸模式">
+          <button type="button" data-size-mode="auto" aria-pressed="true">自动</button>
+          <button type="button" data-size-mode="ratio" aria-pressed="false">按比例</button>
+          <button id="customSizeModeBtn" type="button" data-size-mode="custom" aria-pressed="false">自定义</button>
+        </div>
+        <p id="sizeModeHint" class="ctrl__hint" aria-live="polite"></p>
+        <div id="sizeRatioGrid" class="size-ratio-grid" aria-label="选择比例">
+          <button type="button" class="size-ratio-option" data-ratio="1:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 1"></span><span>1:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:2" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 2"></span><span>3:2</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="2:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 2 / 3"></span><span>2:3</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="16:9" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 16 / 9"></span><span>16:9</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="9:16" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 9 / 16"></span><span>9:16</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="4:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 4 / 3"></span><span>4:3</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:4" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 4"></span><span>3:4</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="5:4" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 5 / 4"></span><span>5:4</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="4:5" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 4 / 5"></span><span>4:5</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="2:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 2 / 1"></span><span>2:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="1:2" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 2"></span><span>1:2</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="21:9" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 21 / 9"></span><span>21:9</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="9:21" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 9 / 21"></span><span>9:21</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="3:1" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 3 / 1"></span><span>3:1</span></button>
+          <button type="button" class="size-ratio-option" data-ratio="1:3" aria-pressed="false"><span class="size-ratio-option__shape" style="--ratio: 1 / 3"></span><span>1:3</span></button>
+        </div>
+        <div id="customSizeControls" class="custom-size-controls" hidden>
+          <div class="size-dimension-fields">
+            <div class="ctrl">
+              <label class="ctrl__label" for="customWidthInput">宽度</label>
+              <div class="field-shell"><input id="customWidthInput" class="launcher-input" type="number" min="16" max="3840" step="16" value="1024" inputmode="numeric"></div>
+            </div>
+            <span class="size-dimension-times" aria-hidden="true">×</span>
+            <div class="ctrl">
+              <label class="ctrl__label" for="customHeightInput">高度</label>
+              <div class="field-shell"><input id="customHeightInput" class="launcher-input" type="number" min="16" max="3840" step="16" value="1024" inputmode="numeric"></div>
+            </div>
+          </div>
+          <p id="customSizeError" class="size-validation" role="status"></p>
+          <p class="ctrl__hint">宽高需为 16 的倍数，最长边不超过 3840，面积与比例须符合接口限制。</p>
+        </div>
+      </div>
+      <aside class="size-preview-panel" aria-label="尺寸预览">
+        <div class="size-preview-panel__head">
+          <span>预览</span>
+          <strong id="sizePreviewDimensions">自动</strong>
+        </div>
+        <div class="size-preview__stage">
+          <div id="sizePreviewFrame" class="size-preview__frame"></div>
+        </div>
+        <p id="sizePreviewNote" class="ctrl__hint"></p>
+      </aside>
+    </div>
+    <div class="modal__foot">
+      <button id="cancelSizeSettingsBtn" type="button" class="launcher-button">取消</button>
+      <button id="confirmSizeSettingsBtn" type="button" class="launcher-button launcher-button--primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<script src="./image-contract.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

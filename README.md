@@ -2,6 +2,15 @@
 
 面向 [APIMart](https://apimart.ai/zh) GPT-Image-2.6 接口的图像生成中转服务。提供浏览器端交互界面，通过服务端代理调用上游 API，支持文生图、图生图、多图生图，以及 PNG、JPEG、WebP、GIF、SVG 输出。
 
+## 主要文件
+
+- `server.js`：静态服务、APIMart 代理、任务查询、上传和下载
+- `app.js`：浏览器界面、尺寸设置、历史记录和参考图处理
+- `image-contract.js`：浏览器与 CLI 共用的精确尺寸限制
+- `cli.js`：通过本站代理路由生成、轮询和下载
+- `test/cli.test.js`：不访问 APIMart 的 CLI 模拟路由测试
+- `index.html`、`styles.css`：页面结构和样式
+
 ## 在线演示
 
 演示站点：[https://image2.hatsuneniku.shop/](https://image2.hatsuneniku.shop/) **你真的敢在在线演示站点填KEY吗？？？**
@@ -19,6 +28,7 @@
 
 - Docker
 - Docker Compose
+- Node.js 20+（使用本地 CLI 时）
 
 可选：
 
@@ -118,17 +128,34 @@ HTTPS 配置按常规方式添加 SSL 证书即可，`proxy_pass` 指向不变�
 3. 按附件数量自动判定模式：无附件为文生图，单张为图生图，多张为多图生图
 4. 默认使用 2.6 Ext Flare 固定单价模式；若切换到普通 Flare / Sunburst，图片会按 Token 用量计费。确认参数后点击"开始生成"
 5. 生成结果展示在历史记录中，支持点击图片查看大图、下载到本地
+6. 可从任意页面区域拖入 JPEG、PNG、GIF 或 WebP 图片添加为参考图；也可继续粘贴到提示词框或点击上传按钮
+
+### CLI 调用
+
+CLI 通过本站代理路由调用同一套 APIMart 生成、上传、任务查询和下载接口，不会绕过服务端直连上游。先启动站点，再在终端设置 API Key：
+
+```powershell
+$env:APIMART_API_KEY = [System.Net.NetworkCredential]::new("", (Read-Host "APIMart API Key" -AsSecureString)).Password
+$env:IMAGE_STUDIO_URL = "http://127.0.0.1:43888"
+npm run image -- --prompt "雨夜中的红色跑车" --model ext-flare --size 16:9 --output .\generated
+```
+
+也可以运行 `node cli.js --help` 查看所有参数。`--model` 支持 `ext-flare`、`ext-sunburst`、`flare`、`sunburst`；`--size` 支持 `auto`、比例或精确尺寸，例如 `1536x1024`。普通模型精确尺寸必须满足接口的倍数、像素面积、最长边和比例限制；此模式省略分辨率档位。Ext 只开放 1K、单张和文档支持的比例。
+
+参考图可重复指定 `--reference <文件>`，最多 16 张。`--output <目录>` 会经 `/api/download` 保存图片；省略时输出图片 URL。默认提交后等待结果；`--no-wait` 只提交并打印任务 ID，稍后可用 `--task <任务 ID>` 继续查询。CLI 从 `APIMART_API_KEY` 环境变量读取密钥，不要把真实密钥写入脚本或命令历史。指定 `IMAGE_STUDIO_URL` 时，密钥会发送给该网站实例，请仅连接你信任的服务。
+
+运行 `npm test` 可执行 CLI 参数和模拟网站路由测试；测试使用虚构响应，不会向 APIMart 发送请求。
 
 ### 2.6 模型说明
 
 - `gpt-image-2.6-flare` / `gpt-image-2.6-sunburst`：按图片 Token 用量计费；支持 1K / 2K / 4K 和 15 种比例。质量选择自动时按 max 档预留，再按实际质量档位结算；SVG 还会产生文本模型 Token 用量。
 - `gpt-image-2.6-ext`：默认选中，按张固定价，通过 Flare / Sunburst 版本选择；当前只开放 1K 和单张生成，质量档位不影响单张价格。
 
-界面会随模型和输出格式限制参数：Ext 锁定 1K、单张及文档支持的比例，参考图最多 16 张；GIF 固定使用自动比例；SVG 不接受参考图，Ext 的 GIF 也不接受参考图。Ext 不生效的背景参数不会发送。旧版保存的普通 Flare 默认值会迁移到 Ext Flare。
+界面会随模型和输出格式限制参数：Ext 锁定 1K、单张及文档支持的比例，参考图最多 16 张；普通模型还可以指定符合接口限制的精确像素尺寸；GIF 固定使用自动尺寸；SVG 不接受参考图，Ext 的 GIF 也不接受参考图。Ext 不生效的背景参数不会发送。旧版保存的普通 Flare 默认值会迁移到 Ext Flare。
 
 ### 架构审查记录
 
-本阶段只调整客户端默认值和确定性参数约束，不增加模型推理或 API 请求：无参考图时一次生成仍提交 1 次 `/api/generate`，之后沿用现有任务轮询；有参考图时仍按每张图调用现有上传接口，客户端最多接受 16 张。自动重试和回退请求均为 0，缓存、延迟与失败恢复策略不变。默认计费模式改为 Ext 固定单价，用户显式选择普通 Flare / Sunburst 后仍按 Token 结算；自动质量的 max 档预留和 SVG 文本 Token 用量会在界面提示。客户端拦截不支持的参数组合，避免无效提交；不宣称具体节省金额，收益是降低误选计费模式和因参数不匹配而失败的概率。
+本次尺寸窗口、全页拖图和调试卡片均由客户端确定性逻辑完成，不增加模型推理，也不改变页面生成请求。无参考图时每次提交 1 次 `/api/generate`；每张参考图额外调用 1 次现有上传接口，页面和 CLI 都最多接受 16 张并按顺序上传。CLI 每次状态请求复用 `/api/tasks/:taskId`，以终态或超时为止；选择下载目录后，每张结果图额外调用 1 次 `/api/download`。自动重试与回退请求均为 0；轮询间隔和首次延迟由 CLI 参数控制，网站设置页仍沿用原值。浏览器缩略图缓存继续使用 IndexedDB，CLI 不做远程缓存，仅写入用户指定目录。API Key 仍只在调用站点代理时传入。模型计费行为不变，收益是可脚本化调用、减少不支持尺寸的提交，以及让图片拖入位置更灵活。
 
 ## 常用运维命令
 
